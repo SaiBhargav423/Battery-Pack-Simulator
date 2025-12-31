@@ -1,0 +1,22 @@
+name: "Resistance Increase - Normal Distribution"
+description: "Resistance increase with normal distribution and Poisson fault arrival"
+mode: probabilistic
+seed: 42
+monte_carlo:
+  n_runs: 800
+  sampling_strategy: sobol
+faults:
+  - type: resistance_increase
+    target: cell_5
+    parameters:
+      resistance_multiplier:
+        distribution: normal
+        mean: 1.5
+        std: 0.2
+    timing:
+      trigger_model: poisson
+      rate: 0.0001  # per second
+statistical_analysis:
+  metrics: [mean, std, percentiles, confidence_intervals]
+  confidence_level: 0.95
+

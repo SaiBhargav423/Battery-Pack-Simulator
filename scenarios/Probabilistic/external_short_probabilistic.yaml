@@ -1,0 +1,27 @@
+name: "External Short - Probabilistic"
+description: "External short circuit with probabilistic resistance and timing"
+mode: probabilistic
+seed: 42
+monte_carlo:
+  n_runs: 1000
+  sampling_strategy: lhs
+faults:
+  - type: external_short_circuit
+    target: pack
+    parameters:
+      resistance_ohm:
+        distribution: uniform
+        min: 0.01
+        max: 0.1
+    timing:
+      trigger_model: weibull
+      shape: 2.0
+      scale: 1800.0  # 30 minutes
+      duration_sec:
+        distribution: uniform
+        min: 300.0
+        max: 600.0
+statistical_analysis:
+  metrics: [mean, std, percentiles, confidence_intervals]
+  confidence_level: 0.95
+

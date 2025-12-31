@@ -1,0 +1,13 @@
+name: "Sensor Offset"
+description: "Sensor measurement offset (handled by AFE wrapper)"
+mode: deterministic
+seed: 42
+faults:
+  - type: sensor_offset
+    target: cell_5
+    parameters:
+      voltage_offset_mv: 10.0
+      temperature_offset_c: 2.0
+    timing:
+      trigger_time_sec: 0.0
+

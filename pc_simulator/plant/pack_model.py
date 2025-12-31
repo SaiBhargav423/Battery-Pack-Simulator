@@ -110,6 +110,7 @@ class BatteryPack16S:
         # Fault injection state
         self._fault_voltages = np.full(self.NUM_CELLS, None, dtype=object)  # None or forced voltage in mV
         self._fault_temperatures = np.full(self.NUM_CELLS, None, dtype=object)  # None or forced temp in °C
+        self._fault_state = {}  # Pack-level fault state
         
         # Track pack current (same for all cells in series)
         self._pack_current_ma = 0.0

@@ -1,0 +1,12 @@
+name: "Sensor Drift"
+description: "Gradual sensor drift over time"
+mode: deterministic
+seed: 42
+faults:
+  - type: sensor_drift
+    target: cell_5
+    parameters:
+      drift_rate_mv_per_hour: 1.0
+    timing:
+      trigger_time_sec: 0.0
+

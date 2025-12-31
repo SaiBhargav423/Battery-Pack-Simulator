@@ -1,0 +1,13 @@
+name: "Internal Short Circuit - Soft"
+description: "Soft internal short (500Ω) on cell 5 at 80% SOC"
+mode: deterministic
+seed: 42
+faults:
+  - type: internal_short_circuit_soft
+    target: cell_5
+    parameters:
+      resistance_ohm: 500.0
+    timing:
+      trigger_soc: 80.0
+      duration_sec: 600
+

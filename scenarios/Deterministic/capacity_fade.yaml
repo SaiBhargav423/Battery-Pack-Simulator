@@ -1,0 +1,12 @@
+name: "Capacity Fade"
+description: "Capacity reduction on cell 5"
+mode: deterministic
+seed: 42
+faults:
+  - type: capacity_fade
+    target: cell_5
+    parameters:
+      fade_factor: 0.9
+    timing:
+      trigger_time_sec: 0.0
+

@@ -1,0 +1,14 @@
+name: "Cell Imbalance"
+description: "Cell-to-cell variations across multiple cells"
+mode: deterministic
+seed: 42
+faults:
+  - type: cell_imbalance
+    target: pack
+    parameters:
+      cell_indices: [5, 6, 7]
+      soc_variation_pct: 5.0
+      capacity_variation_pct: 2.0
+    timing:
+      trigger_time_sec: 0.0
+

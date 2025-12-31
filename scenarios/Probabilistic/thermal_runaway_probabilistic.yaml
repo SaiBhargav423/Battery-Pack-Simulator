@@ -1,0 +1,24 @@
+name: "Thermal Runaway - Probabilistic"
+description: "Thermal runaway with probabilistic escalation and Weibull timing"
+mode: probabilistic
+seed: 42
+monte_carlo:
+  n_runs: 1000
+  sampling_strategy: lhs
+  convergence_tolerance: 0.01
+faults:
+  - type: thermal_runaway
+    target: cell_5
+    parameters:
+      escalation_factor:
+        distribution: uniform
+        min: 1.05
+        max: 1.15
+    timing:
+      trigger_model: weibull
+      shape: 2.0
+      scale: 3600.0  # 1 hour
+statistical_analysis:
+  metrics: [mean, std, percentiles, confidence_intervals]
+  confidence_level: 0.95
+

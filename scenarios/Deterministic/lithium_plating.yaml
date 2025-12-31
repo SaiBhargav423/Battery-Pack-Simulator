@@ -1,0 +1,13 @@
+name: "Lithium Plating"
+description: "Lithium plating effects on cell 5"
+mode: deterministic
+seed: 42
+faults:
+  - type: lithium_plating
+    target: cell_5
+    parameters:
+      plating_resistance_ohm: 0.5
+      capacity_reduction: 0.05
+    timing:
+      trigger_time_sec: 0.0
+

@@ -327,6 +327,9 @@ class LiFePO4Cell:
         self._storage_soc = initial_soc  # SOC during storage (for calendar aging)
         self._storage_temp = temperature_c  # Temperature during storage
         
+        # Fault state tracking
+        self._fault_state = {}
+        
         # Calculate aged capacity and resistance
         self._update_aging()
         
@@ -486,6 +489,17 @@ class LiFePO4Cell:
         # Apply base multiplier (cell-to-cell variation) and aging multiplier
         r0_mohm = r0_base_mohm * temp_factor * self._base_resistance_multiplier * self._resistance_multiplier
         
+        # Apply fault-based resistance changes
+        if hasattr(self, '_fault_state') and self._fault_state:
+            # Resistance increase fault
+            if 'resistance_increase' in self._fault_state and self._fault_state['resistance_increase'].get('active', False):
+                multiplier = self._fault_state['resistance_increase'].get('multiplier', 1.0)
+                r0_mohm *= multiplier
+            # Open circuit fault
+            if 'open_circuit' in self._fault_state and self._fault_state['open_circuit'].get('active', False):
+                resistance_ohm = self._fault_state['open_circuit'].get('resistance_ohm', 1e6)
+                r0_mohm = resistance_ohm * 1000.0  # Convert to mΩ
+        
         return r0_mohm
     
     def _update_thermal_model(self, current_ma: float, dt_ms: float, ambient_temp_c: Optional[float] = None):
@@ -561,15 +575,21 @@ class LiFePO4Cell:
         else:
             self._temperature_c = temperature_c
         
+        # Apply fault effects (modifies current and temperature)
+        fault_current_ma, temp_adjustment = self._apply_fault_effects(current_ma, dt_ms)
+        self._temperature_c += temp_adjustment
+        
         # Get temperature-dependent capacity
         # Capacity increases with temperature: Q(T) = Q_nominal * [1 + 0.005 * (T - 25)]
         temp_capacity_factor = 1.0 + self.CAPACITY_TEMP_COEFF * (self._temperature_c - 25.0)
-        capacity_ah = self._capacity_actual_ah * temp_capacity_factor
+        fault_capacity_factor = self._get_fault_capacity_factor()
+        capacity_ah = self._capacity_actual_ah * temp_capacity_factor * fault_capacity_factor
         
         # Update SOC using Coulomb counting
         # SOC change: dSOC = I * dt / Q
         # Positive current (charge) increases SOC, negative current (discharge) decreases SOC
-        current_a = current_ma / 1000.0
+        # Use fault-modified current
+        current_a = fault_current_ma / 1000.0
         dt_hours = dt_ms / (1000.0 * 3600.0)
         dsoc = (current_a * dt_hours) / capacity_ah
         
@@ -714,4 +734,63 @@ class LiFePO4Cell:
         self._v_rc1 = 0.0
         self._v_rc2 = 0.0
         self._last_current_direction = 0
+        # Clear fault state on reset
+        self._fault_state = {}
+    
+    def _apply_fault_effects(self, current_ma: float, dt_ms: float) -> Tuple[float, float]:
+        """
+        Apply fault effects to current and temperature.
+        
+        Args:
+            current_ma: Original current in mA
+            dt_ms: Time step in ms
+            
+        Returns:
+            Tuple of (modified_current_ma, temperature_adjustment_c)
+        """
+        modified_current = current_ma
+        temp_adjustment = 0.0
+        
+        if not hasattr(self, '_fault_state') or not self._fault_state:
+            return modified_current, temp_adjustment
+        
+        # Leakage current (self-discharge)
+        if 'leakage_current' in self._fault_state and self._fault_state['leakage_current'].get('active', False):
+            leakage_ma = self._fault_state['leakage_current'].get('current_ma', 0.0)
+            modified_current -= leakage_ma  # Leakage reduces effective current
+        
+        # Internal short circuit - adds parallel current path
+        if 'internal_short' in self._fault_state and self._fault_state['internal_short'].get('active', False):
+            r_short_ohm = self._fault_state['internal_short'].get('resistance_ohm', 0.1)
+            # Short circuit current: I_short = V_cell / R_short
+            # Approximate using OCV
+            ocv_v = self.get_ocv()  # Get OCV in volts
+            i_short_a = ocv_v / r_short_ohm if r_short_ohm > 0 else 0.0
+            i_short_ma = i_short_a * 1000.0
+            # Short circuit draws current (reduces available current)
+            modified_current -= i_short_ma
+            # Short circuit also generates heat
+            power_w = (i_short_a ** 2) * r_short_ohm
+            temp_adjustment += (power_w * dt_ms / 1000.0) / self.THERMAL_MASS
+        
+        # Thermal runaway - temperature escalation
+        if 'thermal_runaway' in self._fault_state and self._fault_state['thermal_runaway'].get('active', False):
+            escalation = self._fault_state['thermal_runaway'].get('escalation_factor', 1.1)
+            # Temperature increases exponentially
+            dt_sec = dt_ms / 1000.0
+            temp_increase = (escalation - 1.0) * self._temperature_c * dt_sec
+            temp_adjustment += temp_increase
+        
+        return modified_current, temp_adjustment
+    
+    def _get_fault_capacity_factor(self) -> float:
+        """Get capacity reduction factor due to faults."""
+        if not hasattr(self, '_fault_state') or not self._fault_state:
+            return 1.0
+        
+        factor = 1.0
+        if 'capacity_fade' in self._fault_state and self._fault_state['capacity_fade'].get('active', False):
+            factor *= self._fault_state['capacity_fade'].get('fade_factor', 1.0)
+        
+        return factor
 

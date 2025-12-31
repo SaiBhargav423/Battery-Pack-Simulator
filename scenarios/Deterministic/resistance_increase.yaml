@@ -1,0 +1,12 @@
+name: "Resistance Increase"
+description: "Internal resistance increase on cell 5"
+mode: deterministic
+seed: 42
+faults:
+  - type: resistance_increase
+    target: cell_5
+    parameters:
+      resistance_multiplier: 1.5
+    timing:
+      trigger_time_sec: 240.0
+

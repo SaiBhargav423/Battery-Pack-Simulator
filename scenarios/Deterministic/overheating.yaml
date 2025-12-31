@@ -1,0 +1,12 @@
+name: "Overheating"
+description: "Elevated temperature on cell 5"
+mode: deterministic
+seed: 42
+faults:
+  - type: overheating
+    target: cell_5
+    parameters:
+      temperature_c: 60.0
+    timing:
+      trigger_time_sec: 180.0
+

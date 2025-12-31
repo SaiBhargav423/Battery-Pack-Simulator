@@ -1,0 +1,12 @@
+name: "Thermal Runaway"
+description: "Temperature escalation feedback on cell 5"
+mode: deterministic
+seed: 42
+faults:
+  - type: thermal_runaway
+    target: cell_5
+    parameters:
+      escalation_factor: 1.1
+    timing:
+      trigger_time_sec: 300.0
+

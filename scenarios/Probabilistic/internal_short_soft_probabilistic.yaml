@@ -1,0 +1,22 @@
+name: "Internal Short - Soft (Probabilistic)"
+description: "Soft internal short with uniform resistance distribution"
+mode: probabilistic
+seed: 42
+monte_carlo:
+  n_runs: 1000
+  sampling_strategy: lhs
+faults:
+  - type: internal_short_circuit_soft
+    target: cell_5
+    parameters:
+      resistance_ohm:
+        distribution: uniform
+        min: 100.0
+        max: 1000.0
+    timing:
+      trigger_model: exponential
+      rate: 0.00005  # per second
+statistical_analysis:
+  metrics: [mean, std, percentiles, confidence_intervals]
+  confidence_level: 0.95
+

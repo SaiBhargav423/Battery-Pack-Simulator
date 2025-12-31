@@ -1,0 +1,25 @@
+name: "Capacity Fade - Aging Model"
+description: "Capacity fade with Weibull aging distribution"
+mode: probabilistic
+seed: 42
+monte_carlo:
+  n_runs: 500
+  sampling_strategy: lhs
+faults:
+  - type: capacity_fade
+    target: cell_5
+    parameters:
+      fade_factor:
+        distribution: weibull
+        shape: 1.5
+        scale: 0.85  # Characteristic fade factor
+        # Transform: weibull gives time-to-failure, we map to fade factor
+        # Fade factor = 1.0 - (weibull_sample / scale)
+    timing:
+      trigger_model: weibull
+      shape: 1.8
+      scale: 7200.0  # 2 hours
+statistical_analysis:
+  metrics: [mean, std, percentiles]
+  confidence_level: 0.95
+

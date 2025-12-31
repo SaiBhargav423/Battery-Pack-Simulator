@@ -34,6 +34,14 @@ from communication.uart_tx import UARTTransmitter
 from communication.uart_tx_mcu import MCUCompatibleUARTTransmitter
 from communication.uart_tx_xbb import XBBUARTTransmitter
 
+# Fault injection imports
+try:
+    from fault_injection.fault_scenarios import load_scenario, create_fault_injector_from_scenario
+    FAULT_INJECTION_AVAILABLE = True
+except ImportError:
+    FAULT_INJECTION_AVAILABLE = False
+    print("Warning: Fault injection framework not available")
+
 
 def print_frame_data(frame_data: dict, sequence: int):
     """Print frame data in readable format."""
@@ -104,6 +112,28 @@ def main():
                        choices=['xbb', 'mcu', 'legacy'],
                        help='Protocol type: xbb (default), mcu, or legacy')
     
+    # Fault injection arguments
+    if FAULT_INJECTION_AVAILABLE:
+        parser.add_argument('--fault-scenario', type=str, default=None,
+                           help='Path to YAML fault scenario file')
+        parser.add_argument('--monte-carlo', action='store_true',
+                           help='Enable Monte Carlo ensemble runs (for fault scenarios)')
+        parser.add_argument('--n-runs', type=int, default=100,
+                           help='Number of MC runs (default: 100)')
+        parser.add_argument('--sampling-strategy', type=str, default='lhs',
+                           choices=['lhs', 'sobol', 'random'],
+                           help='MC sampling strategy (default: lhs)')
+        parser.add_argument('--statistical-analysis', action='store_true',
+                           help='Enable statistical analysis for MC runs')
+        parser.add_argument('--bayesian', action='store_true',
+                           help='Enable Bayesian inference for fault diagnosis')
+        parser.add_argument('--wait-for-fault', action='store_true',
+                           help='Wait for fault to trigger (extends duration if needed, up to --max-duration)')
+        parser.add_argument('--extend-after-fault', type=float, default=None,
+                           help='Extend simulation duration by this many seconds after fault triggers')
+        parser.add_argument('--max-duration', type=float, default=None,
+                           help='Maximum duration when waiting for fault (default: 10x --duration)')
+    
     args = parser.parse_args()
     
     print("\n" + "=" * 80)
@@ -116,7 +146,32 @@ def main():
     print(f"  Duration: {args.duration} seconds")
     print(f"  Pack Current: {args.current} A")
     print(f"  Initial SOC: {args.soc}%")
+    if FAULT_INJECTION_AVAILABLE and args.fault_scenario:
+        print(f"  Fault Scenario: {args.fault_scenario}")
+        if args.monte_carlo:
+            print(f"  Monte Carlo: Enabled ({args.n_runs} runs, {args.sampling_strategy} sampling)")
     print("=" * 80 + "\n")
+    
+    # 0. Load fault scenario (if specified)
+    fault_injector = None
+    if FAULT_INJECTION_AVAILABLE and args.fault_scenario:
+        try:
+            print("Loading fault scenario...")
+            fault_injector = create_fault_injector_from_scenario(
+                load_scenario(args.fault_scenario),
+                seed=42
+            )
+            if args.monte_carlo:
+                fault_injector.enable_monte_carlo(args.sampling_strategy, seed=42)
+            if args.bayesian:
+                fault_injector.enable_bayesian()
+            print(f"  [OK] Fault scenario loaded")
+            stats = fault_injector.get_statistics()
+            print(f"  Faults configured: {stats['total_faults']}")
+        except Exception as e:
+            print(f"  [ERROR] Failed to load fault scenario: {e}")
+            print(f"  Continuing without fault injection...")
+            fault_injector = None
     
     # 1. Create Battery Pack Model
     print("Initializing Battery Pack Model...")
@@ -188,7 +243,24 @@ def main():
     # 4. Simulation parameters
     dt_ms = 1000.0 / args.rate  # Time step in milliseconds
     continuous_mode = (args.duration <= 0)
-    num_steps = int(args.duration * args.rate) if not continuous_mode else 0
+    
+    # Handle fault timing options
+    base_duration = args.duration if args.duration > 0 else 10.0
+    max_duration_sec = None
+    if FAULT_INJECTION_AVAILABLE and args.fault_scenario:
+        if args.wait_for_fault:
+            # Extend duration if waiting for fault
+            max_duration_sec = args.max_duration if args.max_duration is not None else base_duration * 10
+            if not continuous_mode:
+                num_steps = int(max_duration_sec * args.rate)
+                print(f"  [Fault Timing] Waiting for fault (max duration: {max_duration_sec:.1f}s)")
+            else:
+                print(f"  [Fault Timing] Waiting for fault in continuous mode")
+        else:
+            num_steps = int(args.duration * args.rate) if not continuous_mode else 0
+    else:
+        num_steps = int(args.duration * args.rate) if not continuous_mode else 0
+    
     current_ma = args.current * 1000.0  # Convert A to mA
     
     print(f"\nStarting simulation...")
@@ -198,15 +270,57 @@ def main():
     else:
         print(f"  Total steps: {num_steps}")
     print(f"  Current: {args.current} A ({'charge' if args.current > 0 else 'discharge'})")
+    if FAULT_INJECTION_AVAILABLE and args.fault_scenario and args.extend_after_fault:
+        print(f"  [Fault Timing] Will extend {args.extend_after_fault:.1f}s after fault triggers")
     print("\n" + "-" * 80)
     
     # 5. Simulation loop
     start_time = time.time()
     frame_count = 0
+    fault_triggered = False
+    first_fault_time_sec = None
     
     try:
         step = 0
+        simulation_time_ms = 0.0
+        simulation_time_sec = 0.0
+        
         while continuous_mode or step < num_steps:
+            # Check max duration for wait_for_fault
+            if (FAULT_INJECTION_AVAILABLE and args.fault_scenario and 
+                args.wait_for_fault and max_duration_sec is not None and 
+                not continuous_mode):
+                if simulation_time_sec >= max_duration_sec:
+                    if not fault_triggered:
+                        print(f"\n[WARNING] Max duration ({max_duration_sec:.1f}s) reached without fault trigger")
+                    break
+            
+            # Update fault injector (if enabled)
+            if fault_injector is not None:
+                pack_state = pack.get_pack_state()
+                fault_injector.update(simulation_time_ms, pack_state)
+                
+                # Check if fault just triggered
+                if not fault_triggered:
+                    fault_stats = fault_injector.get_statistics()
+                    if fault_stats['active_faults'] > 0:
+                        fault_triggered = True
+                        first_fault_time_sec = simulation_time_sec
+                        print(f"\n[FAULT TRIGGERED] First fault at {first_fault_time_sec:.1f} seconds")
+                        
+                        # If extend_after_fault is set, extend simulation duration
+                        if args.extend_after_fault is not None and not continuous_mode:
+                            extended_duration = first_fault_time_sec + args.extend_after_fault
+                            num_steps = int(extended_duration * args.rate)
+                            print(f"[Extended] Simulation extended to {extended_duration:.1f} seconds to observe fault effects")
+                
+                # Apply pack-level faults
+                fault_injector.apply_to_pack(pack)
+                
+                # Apply cell-level faults
+                for i, cell in enumerate(pack._cells):
+                    fault_injector.apply_to_cell(cell, i)
+            
             # Update battery pack
             pack.update(current_ma=current_ma, dt_ms=dt_ms, ambient_temp_c=25.0)
             
@@ -258,6 +372,8 @@ def main():
             
             frame_count += 1
             step += 1
+            simulation_time_ms += dt_ms
+            simulation_time_sec = simulation_time_ms / 1000.0
             
             # Rate limiting (sleep to maintain frame rate)
             elapsed = time.time() - start_time
@@ -297,6 +413,28 @@ def main():
         print(f"\nCell Imbalance:")
         print(f"  Voltage delta: {imbalance['voltage_delta_mv']:.2f} mV")
         print(f"  SOC delta: {imbalance['soc_delta_pct']:.2f}%")
+        
+        # Print fault injection statistics (if enabled)
+        if fault_injector is not None:
+            fault_stats = fault_injector.get_statistics()
+            print(f"\nFault Injection Statistics:")
+            print(f"  Total faults configured: {fault_stats['total_faults']}")
+            print(f"  Active faults: {fault_stats['active_faults']}")
+            print(f"  Faults injected: {fault_stats['fault_injection_count']}")
+            print(f"  Faults cleared: {fault_stats['fault_clear_count']}")
+            print(f"  Simulation time: {fault_stats['current_time_sec']:.2f} s")
+            
+            # Print fault trigger times
+            fault_trigger_times = []
+            for fault_state in fault_injector._fault_states:
+                if fault_state.triggered and fault_state.trigger_time is not None:
+                    fault_trigger_times.append(fault_state.trigger_time)
+            
+            if fault_trigger_times:
+                print(f"  Fault trigger times: {[f'{t:.1f}s' for t in fault_trigger_times]}")
+                print(f"  First fault time: {min(fault_trigger_times):.1f} s")
+            else:
+                print(f"  No faults triggered during simulation")
         
         print("\n" + "=" * 80)
         print("Simulation completed!")

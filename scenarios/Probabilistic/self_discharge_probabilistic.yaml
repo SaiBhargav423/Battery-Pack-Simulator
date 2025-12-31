@@ -1,0 +1,22 @@
+name: "Self-Discharge - Probabilistic"
+description: "Abnormal self-discharge with probabilistic leakage current"
+mode: probabilistic
+seed: 42
+monte_carlo:
+  n_runs: 800
+  sampling_strategy: random
+faults:
+  - type: abnormal_self_discharge
+    target: cell_5
+    parameters:
+      leakage_current_ma:
+        distribution: normal
+        mean: 10.0
+        std: 2.0
+    timing:
+      trigger_model: poisson
+      rate: 0.0001  # per second
+statistical_analysis:
+  metrics: [mean, std, percentiles]
+  confidence_level: 0.95
+
