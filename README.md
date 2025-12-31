@@ -78,6 +78,13 @@ pip install -r requirements.txt
 
 ## 🎯 Quick Start
 
+### Two Main Scripts
+
+The project has two main entry points:
+
+1. **`main.py`** - Full SIL simulator with AFE wrapper and UART communication (for BMS testing)
+2. **`run_cell_simulation.py`** - Standalone pack simulation for analysis (saves CSV/plots, no AFE/UART)
+
 ### Print-Only Mode (No UART)
 
 Run simulation and print frame data to console:
@@ -105,6 +112,24 @@ Run infinite simulation (press Ctrl+C to stop):
 ```bash
 python pc_simulator/main.py --port COM3 --current 50.0 --duration 0
 ```
+
+### Standalone Pack Simulation (Analysis Mode)
+
+For analysis and testing without AFE/UART:
+
+```bash
+python pc_simulator/plant/run_cell_simulation.py --mode discharge --current 1.0 --duration 60
+```
+
+This script:
+- Runs pack simulation only (no AFE wrapper, no UART)
+- Saves CSV data to `pc_simulator/plant/output/`
+- Optionally generates plots
+- Useful for model validation and analysis
+
+**When to use which script:**
+- **`main.py`**: Use for BMS testing, HIL testing, or when you need AFE simulation and UART communication
+- **`run_cell_simulation.py`**: Use for analysis, model validation, or when you just need pack simulation data
 
 ---
 
@@ -161,6 +186,29 @@ python pc_simulator/main.py --port COM3 --protocol mcu --rate 1.0 --current 25.0
 - Use MCU-compatible protocol
 - Transmit at 1 Hz
 
+#### Example 5: Standalone Pack Simulation (Analysis Mode)
+```bash
+python pc_simulator/plant/run_cell_simulation.py --mode discharge --current 1.0 --duration 60
+```
+- Run pack simulation without AFE/UART
+- Saves CSV data to `pc_simulator/plant/output/`
+- Useful for analysis and testing
+
+**Additional options for `run_cell_simulation.py`:**
+```bash
+# Charge simulation
+python pc_simulator/plant/run_cell_simulation.py --mode charge --current 2.0 --duration 120
+
+# Discharge until target SOC
+python pc_simulator/plant/run_cell_simulation.py --mode discharge --current 1.0 --target-soc 50
+
+# With plot generation
+python pc_simulator/plant/run_cell_simulation.py --mode discharge --current 1.0 --duration 60 --plot
+
+# Custom initial SOC
+python pc_simulator/plant/run_cell_simulation.py --mode discharge --current 1.0 --duration 60 --initial-soc 80
+```
+
 ---
 
 ## 📁 Project Structure
@@ -179,9 +227,10 @@ Battery-Pack-Simulator/
 │   │   ├── uart_tx_mcu.py     # MCU UART transmitter
 │   │   └── uart_tx.py          # Base UART transmitter
 │   └── plant/
-│       ├── cell_model.py       # LiFePO₄ cell ECM model
-│       ├── pack_model.py       # 16S pack model
-│       └── current_profile.py  # Current profile generator
+│       ├── cell_model.py          # LiFePO₄ cell ECM model
+│       ├── pack_model.py           # 16S pack model
+│       ├── current_profile.py      # Current profile generator
+│       └── run_cell_simulation.py # Standalone pack simulation (CSV/plot output)
 ├── scenarios/
 │   ├── charge_discharge_cycle.yaml
 │   ├── charge_profile.yaml
