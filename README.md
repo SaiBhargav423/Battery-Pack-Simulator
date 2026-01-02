@@ -85,6 +85,15 @@ The project has two main entry points:
 1. **`main.py`** - Full SIL simulator with AFE wrapper and UART communication (for BMS testing)
 2. **`run_cell_simulation.py`** - Standalone pack simulation for analysis (saves CSV/plots, no AFE/UART)
 
+### Fault Injection Scripts
+
+For fault injection testing, there are two complementary scripts:
+
+1. **`main.py`** - BMS hardware integration with fault injection (sends data to real BMS via UART)
+2. **`run_fault_local_no_bms.py`** - Local fault simulation (no BMS connection, saves data for analysis)
+
+Both scripts use the **same fault injection framework** and support all fault types identically. The only difference is that `main.py` adds UART transmission and AFE wrapper for hardware testing.
+
 ### Print-Only Mode (No UART)
 
 Run simulation and print frame data to console:
@@ -130,6 +139,8 @@ This script:
 **When to use which script:**
 - **`main.py`**: Use for BMS testing, HIL testing, or when you need AFE simulation and UART communication
 - **`run_cell_simulation.py`**: Use for analysis, model validation, or when you just need pack simulation data
+- **`run_fault_local_no_bms.py`**: Use for fault injection testing and analysis (saves detailed CSV data)
+- **`main.py --fault-scenario`**: Use for fault injection with real BMS hardware testing
 
 ---
 
@@ -154,6 +165,10 @@ python pc_simulator/main.py [OPTIONS]
 | `--protocol` | str | xbb | Protocol type: `xbb`, `mcu`, or `legacy` |
 | `--verbose` | flag | False | Enable verbose logging |
 | `--no-print` | flag | False | Disable frame printing |
+| `--fault-scenario` | str | None | Path to YAML fault scenario file |
+| `--wait-for-fault` | flag | False | Wait for fault to trigger (extends duration if needed) |
+| `--extend-after-fault` | float | None | Extend simulation duration by this many seconds after fault triggers |
+| `--max-duration` | float | None | Maximum duration when waiting for fault |
 
 ### Examples
 
@@ -194,6 +209,22 @@ python pc_simulator/plant/run_cell_simulation.py --mode discharge --current 1.0 
 - Saves CSV data to `pc_simulator/plant/output/`
 - Useful for analysis and testing
 
+#### Example 6: Fault Injection with main.py (BMS Hardware)
+```bash
+python pc_simulator/main.py --port COM3 --current 50.0 --duration 3600 --fault-scenario scenarios/Deterministic/internal_short_hard.yaml
+```
+- Test fault injection with real BMS hardware
+- Sends fault-injected data via UART
+- All 19 deterministic fault types supported
+
+#### Example 7: Fault Injection Local Testing (No BMS)
+```bash
+python pc_simulator/run_fault_local_no_bms.py --scenario scenarios/Deterministic/internal_short_hard.yaml --mode discharge --current 50.0 --duration 3600
+```
+- Test fault injection locally (no hardware needed)
+- Saves detailed CSV data for analysis
+- Same fault framework as main.py
+
 **Additional options for `run_cell_simulation.py`:**
 ```bash
 # Charge simulation
@@ -216,22 +247,33 @@ python pc_simulator/plant/run_cell_simulation.py --mode discharge --current 1.0 
 ```
 Battery-Pack-Simulator/
 ├── pc_simulator/
-│   ├── main.py                 # Main integration script
+│   ├── main.py                      # Main integration script (BMS hardware)
+│   ├── run_fault_local_no_bms.py    # Local fault injection testing
+│   ├── test_all_deterministic_faults.py  # Automated fault test suite
+│   ├── validate_fault_data.py       # Fault data validation script
 │   ├── afe/
-│   │   └── wrapper.py          # AFE measurement simulation
+│   │   └── wrapper.py               # AFE measurement simulation
 │   ├── communication/
-│   │   ├── protocol_xbb.py    # XBB protocol encoder
-│   │   ├── protocol_mcu.py    # MCU protocol encoder
-│   │   ├── protocol.py         # Legacy protocol
-│   │   ├── uart_tx_xbb.py     # XBB UART transmitter
-│   │   ├── uart_tx_mcu.py     # MCU UART transmitter
-│   │   └── uart_tx.py          # Base UART transmitter
+│   │   ├── protocol_xbb.py         # XBB protocol encoder
+│   │   ├── protocol_mcu.py         # MCU protocol encoder
+│   │   ├── protocol.py              # Legacy protocol
+│   │   ├── uart_tx_xbb.py          # XBB UART transmitter
+│   │   ├── uart_tx_mcu.py          # MCU UART transmitter
+│   │   └── uart_tx.py               # Base UART transmitter
+│   ├── fault_injection/
+│   │   ├── fault_framework.py      # Main fault injection framework
+│   │   ├── fault_scenarios.py       # Scenario loading
+│   │   ├── fault_types.py           # Fault type definitions
+│   │   ├── fault_models.py          # Fault model implementations
+│   │   └── ...                      # Additional fault modules
 │   └── plant/
-│       ├── cell_model.py          # LiFePO₄ cell ECM model
-│       ├── pack_model.py           # 16S pack model
-│       ├── current_profile.py      # Current profile generator
-│       └── run_cell_simulation.py # Standalone pack simulation (CSV/plot output)
+│       ├── cell_model.py            # LiFePO₄ cell ECM model
+│       ├── pack_model.py            # 16S pack model
+│       ├── current_profile.py       # Current profile generator
+│       └── run_cell_simulation.py   # Standalone pack simulation
 ├── scenarios/
+│   ├── Deterministic/               # Deterministic fault scenarios (19 types)
+│   ├── Probabilistic/               # Probabilistic fault scenarios
 │   ├── charge_discharge_cycle.yaml
 │   ├── charge_profile.yaml
 │   ├── discharge_profile.yaml
@@ -432,11 +474,125 @@ For issues, feature requests, or contributions, please contact the XBattery Ener
 
 ---
 
+## 🔧 Fault Injection
+
+### Overview
+
+The simulator supports comprehensive fault injection for testing BMS fault detection and handling. All fault types are supported in both `main.py` (BMS hardware) and `run_fault_local_no_bms.py` (local testing).
+
+### Supported Fault Types (19 Deterministic Faults)
+
+**Electrical Faults:**
+- Internal Short Circuit (Hard/Soft)
+- External Short Circuit
+- Overcharge
+- Overdischarge
+- Abnormal Self-Discharge
+- Open Circuit
+
+**Thermal Faults:**
+- Overheating
+- Thermal Runaway
+- Abnormal Temperature
+
+**Degradation Faults:**
+- Capacity Fade
+- Resistance Increase
+- Lithium Plating
+- Cell Imbalance
+- Electrolyte Leakage
+
+**Sensor/System Faults:**
+- Sensor Offset
+- Sensor Drift
+- Insulation Fault
+
+**Propagation Faults:**
+- Thermal Propagation
+- Cascading Failure
+
+### Fault Scenario Files
+
+Fault scenarios are defined in YAML files in `scenarios/Deterministic/` directory. Each scenario specifies:
+- Fault type and target (cell or pack)
+- Fault parameters (resistance, temperature, etc.)
+- Trigger timing (time-based, SOC-based, or immediate)
+
+### Usage Examples
+
+**With main.py (BMS Hardware):**
+```bash
+# Internal short circuit test
+python pc_simulator/main.py \
+  --port COM3 \
+  --current 50.0 \
+  --duration 3600 \
+  --fault-scenario scenarios/Deterministic/internal_short_hard.yaml \
+  --protocol xbb \
+  --rate 1.0
+
+# Thermal runaway test (print-only mode)
+python pc_simulator/main.py \
+  --current 50.0 \
+  --duration 600 \
+  --fault-scenario scenarios/Deterministic/thermal_runaway.yaml \
+  --no-print
+```
+
+**With run_fault_local_no_bms.py (Local Testing):**
+```bash
+# Run single fault simulation
+python pc_simulator/run_fault_local_no_bms.py \
+  --scenario scenarios/Deterministic/internal_short_hard.yaml \
+  --mode discharge \
+  --current 50.0 \
+  --duration 3600 \
+  --output-dir output_test
+
+# Test all deterministic faults
+python pc_simulator/test_all_deterministic_faults.py
+```
+
+### Fault Injection Compatibility
+
+✅ **main.py and run_fault_local_no_bms.py are fully compatible**
+
+Both scripts use the **identical fault injection framework**:
+- Same fault loading: `load_scenario()` and `create_fault_injector_from_scenario()`
+- Same fault application: `fault_injector.update()`, `apply_to_pack()`, `apply_to_cell()`
+- Same cell model: `BatteryPack16S`
+- All 19 deterministic fault types work identically in both scripts
+
+**Differences:**
+- `main.py`: Adds UART transmission and AFE wrapper for hardware testing
+- `run_fault_local_no_bms.py`: Saves detailed CSV data for analysis
+
+### Fault Timing Options
+
+Faults can be triggered in three ways:
+1. **Time-based**: Trigger at specific simulation time
+2. **SOC-based**: Trigger when pack SOC reaches threshold
+3. **Immediate**: Active from simulation start
+
+Additional options:
+- `--wait-for-fault`: Wait for fault to trigger (extends duration if needed)
+- `--extend-after-fault`: Extend simulation after fault triggers
+- `--max-duration`: Maximum duration when waiting for fault
+
+### Documentation
+
+- **Fault Timing Guide**: `scenarios/Deterministic/FAULT_TIMING_GUIDE.md`
+- **All Fault Commands**: `scenarios/ALL_FAULT_COMMANDS.md`
+- **Test Results**: `pc_simulator/output_deterministic_tests/DETERMINISTIC_FAULT_TEST_DOCUMENTATION.md`
+
+---
+
 ## 📚 Additional Resources
 
 - **Codebase Analysis:** See `CODEBASE_ANALYSIS.md` for detailed technical analysis
 - **Test Files:** See `tests_legacy/` directory for usage examples
 - **Scenarios:** See `scenarios/` directory for YAML profile examples
+- **Fault Injection:** See `scenarios/Deterministic/` for fault scenario files
 
 ---
 
@@ -448,4 +604,24 @@ For issues, feature requests, or contributions, please contact the XBattery Ener
 ---
 
 **Last Updated:** 2025-12-31
+
+---
+
+## ✅ Recent Improvements
+
+### Internal Short Circuit Voltage Divider Fix
+- Fixed voltage divider calculation for internal short circuits in ECM model
+- Improved effective resistance calculation (R0 + structural impedance)
+- Now shows realistic 10-30% voltage drops for hard shorts (0.1Ω)
+- Enhanced ECM modeling following best practices
+
+### Thermal Propagation Fault Fix
+- Fixed missing numpy import in fault scenario loading
+- All 19 deterministic fault tests now passing (100% success rate)
+
+### Comprehensive Fault Testing
+- Added automated test suite (`test_all_deterministic_faults.py`)
+- Added validation script (`validate_fault_data.py`)
+- All 19 deterministic fault types tested and documented
+- Full compatibility verified between `main.py` and `run_fault_local_no_bms.py`
 
