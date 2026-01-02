@@ -480,45 +480,217 @@ For issues, feature requests, or contributions, please contact the XBattery Ener
 
 The simulator supports comprehensive fault injection for testing BMS fault detection and handling. All fault types are supported in both `main.py` (BMS hardware) and `run_fault_local_no_bms.py` (local testing).
 
-### Supported Fault Types (19 Deterministic Faults)
+### Supported Fault Types
+
+#### Deterministic Faults (19 Types)
+
+**Location**: `scenarios/Deterministic/`
 
 **Electrical Faults:**
-- Internal Short Circuit (Hard/Soft)
-- External Short Circuit
-- Overcharge
-- Overdischarge
-- Abnormal Self-Discharge
-- Open Circuit
+1. **Internal Short Circuit - Hard** (`internal_short_hard.yaml`)
+   - Low resistance short (0.1Ω)
+   - File: `scenarios/Deterministic/internal_short_hard.yaml`
+2. **Internal Short Circuit - Soft** (`internal_short_soft.yaml`)
+   - High resistance short (500Ω)
+   - File: `scenarios/Deterministic/internal_short_soft.yaml`
+3. **External Short Circuit** (`external_short.yaml`)
+   - Pack-level short across terminals
+   - File: `scenarios/Deterministic/external_short.yaml`
+4. **Overcharge** (`overcharge.yaml`)
+   - Force charging beyond safe voltage
+   - File: `scenarios/Deterministic/overcharge.yaml`
+5. **Overdischarge** (`overdischarge.yaml`)
+   - Force discharging below safe voltage
+   - File: `scenarios/Deterministic/overdischarge.yaml`
+6. **Abnormal Self-Discharge** (`self_discharge.yaml`)
+   - Constant leakage current
+   - File: `scenarios/Deterministic/self_discharge.yaml`
+7. **Open Circuit** (`open_circuit.yaml`)
+   - High resistance disconnection
+   - File: `scenarios/Deterministic/open_circuit.yaml`
 
 **Thermal Faults:**
-- Overheating
-- Thermal Runaway
-- Abnormal Temperature
+8. **Overheating** (`overheating.yaml`)
+   - Elevated temperature condition
+   - File: `scenarios/Deterministic/overheating.yaml`
+9. **Thermal Runaway** (`thermal_runaway.yaml`)
+   - Exponential temperature escalation
+   - File: `scenarios/Deterministic/thermal_runaway.yaml`
+10. **Abnormal Temperature** (`abnormal_temperature.yaml`)
+    - Temperature offset
+    - File: `scenarios/Deterministic/abnormal_temperature.yaml`
 
 **Degradation Faults:**
-- Capacity Fade
-- Resistance Increase
-- Lithium Plating
-- Cell Imbalance
-- Electrolyte Leakage
+11. **Capacity Fade** (`capacity_fade.yaml`)
+    - Reduced cell capacity
+    - File: `scenarios/Deterministic/capacity_fade.yaml`
+12. **Resistance Increase** (`resistance_increase.yaml`)
+    - Increased internal resistance
+    - File: `scenarios/Deterministic/resistance_increase.yaml`
+13. **Lithium Plating** (`lithium_plating.yaml`)
+    - Capacity loss from plating
+    - File: `scenarios/Deterministic/lithium_plating.yaml`
+14. **Cell Imbalance** (`cell_imbalance.yaml`)
+    - Multiple cells with variations
+    - File: `scenarios/Deterministic/cell_imbalance.yaml`
+15. **Electrolyte Leakage** (`electrolyte_leakage.yaml`)
+    - Electrolyte loss effects
+    - File: `scenarios/Deterministic/electrolyte_leakage.yaml`
 
 **Sensor/System Faults:**
-- Sensor Offset
-- Sensor Drift
-- Insulation Fault
+16. **Sensor Offset** (`sensor_offset.yaml`)
+    - Constant measurement offset
+    - File: `scenarios/Deterministic/sensor_offset.yaml`
+17. **Sensor Drift** (`sensor_drift.yaml`)
+    - Time-dependent measurement drift
+    - File: `scenarios/Deterministic/sensor_drift.yaml`
+18. **Insulation Fault** (`insulation_fault.yaml`)
+    - Reduced pack-to-ground resistance
+    - File: `scenarios/Deterministic/insulation_fault.yaml`
 
 **Propagation Faults:**
-- Thermal Propagation
-- Cascading Failure
+19. **Thermal Propagation** (`thermal_propagation.yaml`)
+    - Correlated thermal effects between cells
+    - File: `scenarios/Deterministic/thermal_propagation.yaml`
+20. **Cascading Failure** (`cascading_failure.yaml`)
+    - Sequential fault propagation
+    - File: `scenarios/Deterministic/cascading_failure.yaml`
 
-### Fault Scenario Files
+#### Probabilistic Faults (10 Types)
 
-Fault scenarios are defined in YAML files in `scenarios/Deterministic/` directory. Each scenario specifies:
-- Fault type and target (cell or pack)
-- Fault parameters (resistance, temperature, etc.)
-- Trigger timing (time-based, SOC-based, or immediate)
+**Location**: `scenarios/Probabilistic/`
+
+1. **Internal Short - Monte Carlo** (`internal_short_mc.yaml`)
+   - Uniform resistance distribution, Weibull timing
+   - File: `scenarios/Probabilistic/internal_short_mc.yaml`
+2. **Internal Short - Soft Probabilistic** (`internal_short_soft_probabilistic.yaml`)
+   - Uniform resistance, Exponential timing
+   - File: `scenarios/Probabilistic/internal_short_soft_probabilistic.yaml`
+3. **Thermal Runaway - Probabilistic** (`thermal_runaway_probabilistic.yaml`)
+   - Uniform escalation factor, Weibull timing
+   - File: `scenarios/Probabilistic/thermal_runaway_probabilistic.yaml`
+4. **Capacity Fade - Aging** (`capacity_fade_aging.yaml`)
+   - Weibull distribution for fade factor
+   - File: `scenarios/Probabilistic/capacity_fade_aging.yaml`
+5. **Resistance Increase - Normal** (`resistance_increase_normal.yaml`)
+   - Normal distribution, Poisson timing
+   - File: `scenarios/Probabilistic/resistance_increase_normal.yaml`
+6. **External Short - Probabilistic** (`external_short_probabilistic.yaml`)
+   - Uniform resistance, variable duration
+   - File: `scenarios/Probabilistic/external_short_probabilistic.yaml`
+7. **Self-Discharge - Probabilistic** (`self_discharge_probabilistic.yaml`)
+   - Normal distribution for leakage current
+   - File: `scenarios/Probabilistic/self_discharge_probabilistic.yaml`
+8. **Cell Imbalance - Probabilistic** (`cell_imbalance_probabilistic.yaml`)
+   - Multiple distributions (uniform + normal)
+   - File: `scenarios/Probabilistic/cell_imbalance_probabilistic.yaml`
+9. **Multiple Faults - Correlated** (`multiple_faults_correlated.yaml`)
+   - Gaussian copula correlation
+   - File: `scenarios/Probabilistic/multiple_faults_correlated.yaml`
+10. **Combined Degradation** (`combined_degradation.yaml`)
+    - Multiple degradation faults with correlation
+    - File: `scenarios/Probabilistic/combined_degradation.yaml`
+
+### Configuring and Modifying Faults
+
+#### Fault Scenario File Structure
+
+Fault scenarios are YAML files located in:
+- **Deterministic**: `scenarios/Deterministic/`
+- **Probabilistic**: `scenarios/Probabilistic/`
+
+**Basic Structure (Deterministic):**
+```yaml
+name: "Fault Name"
+description: "Fault description"
+mode: deterministic
+seed: 42
+faults:
+  - type: internal_short_circuit_hard
+    target: cell_5  # or "pack" for pack-level faults
+    parameters:
+      resistance_ohm: 0.1
+    timing:
+      trigger_soc: 80.0      # SOC-based trigger
+      # OR trigger_time_sec: 60.0  # Time-based trigger
+      # OR trigger_time_sec: 0.0   # Immediate trigger
+      duration_sec: 600      # Optional: fault duration (None = permanent)
+```
+
+**Probabilistic Structure:**
+```yaml
+name: "Fault Name - Probabilistic"
+mode: probabilistic
+seed: 42
+monte_carlo:
+  n_runs: 1000
+  sampling_strategy: lhs  # lhs, sobol, or random
+faults:
+  - type: internal_short_circuit_hard
+    target: cell_5
+    parameters:
+      resistance_ohm:
+        distribution: uniform  # uniform, normal, or weibull
+        min: 0.01
+        max: 0.1
+    timing:
+      trigger_model: weibull  # weibull, poisson, or exponential
+      shape: 1.5
+      scale: 7200.0
+```
+
+#### Where to Modify Faults
+
+1. **Create New Fault Scenario**: Create a new YAML file in `scenarios/Deterministic/` or `scenarios/Probabilistic/`
+2. **Modify Existing Fault**: Edit the YAML file directly
+3. **Change Fault Parameters**: Modify the `parameters` section in the YAML file
+4. **Change Fault Timing**: Modify the `timing` section in the YAML file
+5. **Add Multiple Faults**: Add multiple entries to the `faults` list
+
+#### Fault Type Reference
+
+**File**: `pc_simulator/fault_injection/fault_types.py`
+
+Available fault types:
+- `internal_short_circuit_hard`
+- `internal_short_circuit_soft`
+- `external_short_circuit`
+- `overcharge`
+- `overdischarge`
+- `abnormal_self_discharge`
+- `open_circuit`
+- `overheating`
+- `thermal_runaway`
+- `abnormal_temperature`
+- `capacity_fade`
+- `resistance_increase`
+- `lithium_plating`
+- `cell_imbalance`
+- `electrolyte_leakage`
+- `sensor_offset`
+- `sensor_drift`
+- `insulation_fault`
+- `thermal_propagation`
+- `cascading_failure`
+
+#### Fault Implementation Details
+
+**Fault Models**: `pc_simulator/fault_injection/fault_models.py`
+- Contains implementation functions for each fault type
+- Modify these functions to change fault behavior
+
+**Fault Framework**: `pc_simulator/fault_injection/fault_framework.py`
+- Core fault injection logic
+- Fault state management
+- Timing and triggering
+
+**Fault Scenarios**: `pc_simulator/fault_injection/fault_scenarios.py`
+- YAML loading and parsing
+- Fault injector creation from scenarios
 
 ### Usage Examples
+
+#### Deterministic Faults
 
 **With main.py (BMS Hardware):**
 ```bash
@@ -553,6 +725,41 @@ python pc_simulator/run_fault_local_no_bms.py \
 python pc_simulator/test_all_deterministic_faults.py
 ```
 
+#### Probabilistic Faults (Monte Carlo)
+
+**Single Run with Probabilistic Timing:**
+```bash
+python pc_simulator/run_fault_local_no_bms.py \
+  --scenario scenarios/Probabilistic/internal_short_mc.yaml \
+  --mode discharge \
+  --current 50.0 \
+  --duration 3600 \
+  --wait-for-fault \
+  --extend-after-fault 600 \
+  --max-duration 7200
+```
+
+**Monte Carlo Ensemble (Statistical Analysis):**
+```bash
+# Run 1000 simulations with statistical analysis
+python pc_simulator/run_fault_local_no_bms.py \
+  --scenario scenarios/Probabilistic/internal_short_mc.yaml \
+  --monte-carlo \
+  --n-runs 1000 \
+  --sampling-strategy lhs \
+  --statistical-analysis \
+  --mode discharge \
+  --current 50.0 \
+  --duration 3600 \
+  --output-dir output_mc_analysis
+```
+
+**Outputs from Monte Carlo:**
+- `ensemble_results.csv` - Results from all runs
+- `statistics_summary.csv` - Mean, std, percentiles, confidence intervals
+- `soc_distribution.png` - Distribution plots
+- `voltage_distribution.png` - Distribution plots
+
 ### Fault Injection Compatibility
 
 ✅ **main.py and run_fault_local_no_bms.py are fully compatible**
@@ -579,9 +786,109 @@ Additional options:
 - `--extend-after-fault`: Extend simulation after fault triggers
 - `--max-duration`: Maximum duration when waiting for fault
 
+### Pack and Cell Model Configuration
+
+#### Pack Model Configuration
+
+**File**: `pc_simulator/plant/pack_model.py`  
+**Class**: `BatteryPack16S`
+
+**Configurable Parameters** (in `__init__` method):
+
+```python
+BatteryPack16S(
+    cell_capacity_ah=100.0,              # Nominal capacity per cell (Ah)
+    initial_soc_pct=50.0,                 # Initial pack SOC (%)
+    ambient_temp_c=25.0,                  # Ambient temperature (°C)
+    capacity_variation_sigma=0.4,         # Capacity mismatch std dev (%)
+    soc_variation_sigma=0.25,              # Initial SOC variation std dev (%)
+    resistance_variation=0.025,           # Resistance variation range (±fraction)
+    thermal_coupling_coeff=0.1,           # Thermal coupling coefficient (0-1)
+    soc_calculation_mode='minimum',       # 'average' or 'minimum' for pack SOC
+    seed=42                                # Random seed for reproducibility
+)
+```
+
+**Where to Modify**:
+- **Pack Parameters**: Edit `BatteryPack16S.__init__()` in `pc_simulator/plant/pack_model.py` (lines 37-48)
+- **Cell Variations**: Modify variation generation logic (lines 72-91)
+- **Thermal Coupling**: Edit `_apply_thermal_coupling()` method (lines 167+)
+- **Pack SOC Calculation**: Modify `get_pack_soc()` method
+
+**Default Values** (tuned to match real data):
+- Capacity variation: σ = 0.4% (real packs show <1%)
+- SOC variation: σ = 0.25% (real balanced packs have <0.5%)
+- Resistance variation: ±2.5% (real data shows low variation)
+
+#### Cell Model Configuration
+
+**File**: `pc_simulator/plant/cell_model.py`  
+**Class**: `LiFePO4Cell`
+
+**Configurable Parameters** (class attributes):
+
+```python
+# ECM Parameters (lines 253-261)
+R1 = 1e-3          # Fast transient resistance (1 mΩ)
+C1 = 2000.0        # Fast transient capacitance (2000 F, τ1 = 2s)
+R2 = 0.5e-3        # Slow transient resistance (0.5 mΩ)
+C2 = 10000.0       # Slow transient capacitance (10000 F, τ2 = 5s)
+
+# Temperature Coefficients (lines 263-265)
+OCV_TEMP_COEFF = -0.5e-3      # OCV temperature coefficient (-0.5 mV/°C)
+CAPACITY_TEMP_COEFF = 0.005   # Capacity temperature coefficient (+0.5% per °C)
+
+# Aging Parameters (lines 267-276)
+FADE_RATE = 0.0001             # Capacity fade rate per cycle
+RESISTANCE_INCREASE_RATE = 0.001  # Resistance increase rate per cycle
+CALENDAR_AGING_ACTIVATION_ENERGY = 30000.0  # J/mol
+CALENDAR_AGING_BASE_RATE = 1.0e-9  # per hour at 25°C, 50% SOC
+
+# Thermal Parameters (lines 279-287)
+THERMAL_MASS = 3500.0          # Thermal mass (J/°C)
+THERMAL_RESISTANCE = 0.5       # Thermal resistance to ambient (K/W)
+CELL_SURFACE_AREA = 0.15       # m²
+CONVECTION_COEFFICIENT = 10.0   # W/(m²·K)
+EMISSIVITY = 0.9               # Surface emissivity
+```
+
+**Initialization Parameters** (in `__init__` method, lines 289-297):
+
+```python
+LiFePO4Cell(
+    capacity_ah=100.0,          # Nominal capacity (Ah)
+    initial_soc=0.5,            # Initial SOC (0.0 to 1.0)
+    temperature_c=25.0,         # Initial temperature (°C)
+    cycles=0,                   # Number of charge/discharge cycles
+    ambient_temp_c=25.0,        # Ambient temperature (°C)
+    resistance_multiplier=1.0   # Base resistance multiplier
+)
+```
+
+**Where to Modify**:
+- **ECM Parameters**: Edit class attributes (lines 253-261) for R1, C1, R2, C2
+- **OCV Tables**: Modify `_OCV_SOC_TABLE_CHARGE` and `_OCV_SOC_TABLE_DISCHARGE` (lines 35-251)
+- **Internal Resistance**: Modify `get_internal_resistance()` method (lines 455-511)
+- **Thermal Model**: Edit thermal parameters (lines 279-287) and `_update_thermal_model()` (lines 513+)
+- **Aging Models**: Modify aging parameters (lines 267-276) and `_update_aging()` method
+- **Voltage Divider (Internal Short)**: Edit voltage divider calculation in `update()` method (lines 740-816)
+
+**OCV-SOC Relationship**:
+- Charge curve: `_OCV_SOC_TABLE_CHARGE` (lines 35-125)
+- Discharge curve: `_OCV_SOC_TABLE_DISCHARGE` (lines 127-251)
+- Modify these arrays to change OCV characteristics
+
+**Internal Resistance (R0)**:
+- Base R0: 0.5 mΩ at 50% SOC (line 491)
+- SOC dependence: Multiplier varies from 1.4x (0% SOC) to 0.75x (100% SOC) (lines 484-489)
+- Temperature dependence: -0.5% per °C (line 494)
+- Modify `get_internal_resistance()` method (lines 455-511) to change R0 behavior
+
 ### Documentation
 
-- **Fault Timing Guide**: `scenarios/Deterministic/FAULT_TIMING_GUIDE.md`
+- **Fault Timing Guide (Deterministic)**: `scenarios/Deterministic/FAULT_TIMING_GUIDE.md`
+- **Fault Timing Guide (Probabilistic)**: `scenarios/Probabilistic/FAULT_TIMING_GUIDE.md`
+- **Probabilistic Faults README**: `scenarios/Probabilistic/README.md`
 - **All Fault Commands**: `scenarios/ALL_FAULT_COMMANDS.md`
 - **Test Results**: `pc_simulator/output_deterministic_tests/DETERMINISTIC_FAULT_TEST_DOCUMENTATION.md`
 
