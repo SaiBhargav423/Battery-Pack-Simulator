@@ -291,29 +291,6 @@ Battery-Pack-Simulator/
 
 ---
 
-## 🔬 Testing
-
-Run unit tests:
-
-```bash
-# Run all tests
-pytest tests_legacy/
-
-# Run specific test file
-pytest tests_legacy/test_cell_model.py
-
-# Run with verbose output
-pytest tests_legacy/ -v
-```
-
-Run integration test:
-
-```bash
-python pc_simulator/test_integration.py
-```
-
----
-
 ## 📡 Protocol Details
 
 ### XBB Protocol
@@ -690,11 +667,26 @@ Available fault types:
 
 ### Usage Examples
 
-#### Deterministic Faults
+#### Running Fault Cases with main.py
 
-**With main.py (BMS Hardware):**
+**main.py** is the primary script for BMS hardware testing with fault injection. It sends fault-injected data to real BMS hardware via UART.
+
+**Basic Syntax:**
 ```bash
-# Internal short circuit test
+python pc_simulator/main.py \
+  --fault-scenario <path_to_yaml> \
+  [--port COM3] \
+  [--current 50.0] \
+  [--duration 3600] \
+  [--soc 50.0] \
+  [--protocol xbb] \
+  [--rate 1.0]
+```
+
+**Deterministic Fault Examples:**
+
+1. **Internal Short Circuit (with UART to BMS):**
+```bash
 python pc_simulator/main.py \
   --port COM3 \
   --current 50.0 \
@@ -702,8 +694,10 @@ python pc_simulator/main.py \
   --fault-scenario scenarios/Deterministic/internal_short_hard.yaml \
   --protocol xbb \
   --rate 1.0
+```
 
-# Thermal runaway test (print-only mode)
+2. **Thermal Runaway (Print-Only Mode, No Hardware):**
+```bash
 python pc_simulator/main.py \
   --current 50.0 \
   --duration 600 \
@@ -711,7 +705,108 @@ python pc_simulator/main.py \
   --no-print
 ```
 
-**With run_fault_local_no_bms.py (Local Testing):**
+3. **Overcharge Fault (with UART):**
+```bash
+python pc_simulator/main.py \
+  --port COM3 \
+  --current 50.0 \
+  --duration 3600 \
+  --soc 50.0 \
+  --fault-scenario scenarios/Deterministic/overcharge.yaml \
+  --protocol xbb \
+  --rate 1.0
+```
+
+4. **External Short Circuit:**
+```bash
+python pc_simulator/main.py \
+  --port COM3 \
+  --current 50.0 \
+  --duration 3600 \
+  --fault-scenario scenarios/Deterministic/external_short.yaml \
+  --protocol mcu \
+  --rate 10.0
+```
+
+5. **Wait for Fault and Extend Observation:**
+```bash
+python pc_simulator/main.py \
+  --port COM3 \
+  --current 50.0 \
+  --duration 3600 \
+  --fault-scenario scenarios/Deterministic/internal_short_hard.yaml \
+  --wait-for-fault \
+  --extend-after-fault 600 \
+  --max-duration 7200 \
+  --protocol xbb \
+  --rate 1.0
+```
+
+**Probabilistic Fault Examples:**
+
+6. **Probabilistic Internal Short (Single Run):**
+```bash
+python pc_simulator/main.py \
+  --port COM3 \
+  --current 50.0 \
+  --duration 3600 \
+  --fault-scenario scenarios/Probabilistic/internal_short_mc.yaml \
+  --wait-for-fault \
+  --extend-after-fault 600 \
+  --max-duration 7200 \
+  --protocol xbb \
+  --rate 1.0
+```
+
+7. **Monte Carlo Ensemble (Multiple Runs):**
+```bash
+python pc_simulator/main.py \
+  --port COM3 \
+  --current 50.0 \
+  --duration 3600 \
+  --fault-scenario scenarios/Probabilistic/internal_short_mc.yaml \
+  --monte-carlo \
+  --n-runs 100 \
+  --sampling-strategy lhs \
+  --protocol xbb \
+  --rate 1.0
+```
+
+**Command-Line Arguments for Fault Injection:**
+
+| Argument | Description | Example |
+|----------|-------------|---------|
+| `--fault-scenario` | Path to YAML fault scenario file | `scenarios/Deterministic/internal_short_hard.yaml` |
+| `--wait-for-fault` | Wait for fault to trigger (extends duration) | Flag |
+| `--extend-after-fault` | Extend simulation by N seconds after fault | `--extend-after-fault 600` |
+| `--max-duration` | Maximum duration when waiting for fault | `--max-duration 7200` |
+| `--monte-carlo` | Enable Monte Carlo ensemble runs | Flag |
+| `--n-runs` | Number of MC runs | `--n-runs 1000` |
+| `--sampling-strategy` | MC sampling: `lhs`, `sobol`, or `random` | `--sampling-strategy lhs` |
+| `--statistical-analysis` | Enable statistical analysis for MC | Flag |
+| `--bayesian` | Enable Bayesian inference | Flag |
+
+**Standard Arguments (also used with faults):**
+
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `--port` | Serial port (COM3, /dev/ttyUSB0) | None (print-only) |
+| `--current` | Pack current in Amperes | 50.0 |
+| `--duration` | Simulation duration in seconds | 10.0 |
+| `--soc` | Initial SOC in percent | 50.0 |
+| `--protocol` | Protocol: `xbb`, `mcu`, or `legacy` | `xbb` |
+| `--rate` | Frame rate in Hz | 1.0 |
+| `--no-print` | Disable frame printing | False |
+
+**Notes:**
+- If `--port` is not specified, `main.py` runs in print-only mode (no hardware needed)
+- All deterministic and probabilistic fault types work with `main.py`
+- Fault data is sent to BMS hardware via UART in real-time
+- Use `--wait-for-fault` for probabilistic faults to ensure fault triggers
+
+#### Running Fault Cases with run_fault_local_no_bms.py
+
+**run_fault_local_no_bms.py** is for local testing and analysis (saves CSV data, no UART):
 ```bash
 # Run single fault simulation
 python pc_simulator/run_fault_local_no_bms.py \
