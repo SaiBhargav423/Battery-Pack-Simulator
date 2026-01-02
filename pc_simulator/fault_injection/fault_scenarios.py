@@ -5,6 +5,7 @@ This module provides functions to load and save fault scenarios from YAML files.
 """
 
 import yaml
+import numpy as np
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 from .fault_types import FaultType

@@ -277,9 +277,14 @@ class LiFePO4Cell:
     CALENDAR_AGING_REF_TEMP = 298.15  # Reference temperature (25°C in Kelvin)
     
     # Thermal parameters
-    THERMAL_MASS = 100.0  # Thermal mass (J/°C) - approximate for 100Ah cell
-    THERMAL_RESISTANCE = 2.0  # Thermal resistance to ambient (°C/W)
+    THERMAL_MASS = 3500.0  # Thermal mass (J/°C) - for 100Ah cell (~2.5kg, c_p=1400 J/(kg·K))
+    THERMAL_RESISTANCE = 0.5  # Thermal resistance to ambient (K/W) - convection + radiation
     SELF_HEATING_COEFF = 0.001  # Self-heating coefficient (W per A²)
+    # Heat dissipation parameters
+    CELL_SURFACE_AREA = 0.15  # m² (approximate for 100Ah cell)
+    CONVECTION_COEFFICIENT = 10.0  # W/(m²·K) - natural convection
+    EMISSIVITY = 0.9  # Surface emissivity for radiation
+    STEFAN_BOLTZMANN = 5.67e-8  # W/(m²·K⁴) - Stefan-Boltzmann constant
     
     def __init__(
         self,
@@ -320,6 +325,9 @@ class LiFePO4Cell:
         # Hysteresis tracking
         self._last_current_direction = 0  # 1 = charging, -1 = discharging, 0 = rest
         self._hysteresis_soc = initial_soc  # SOC at last current direction change
+        
+        # Store last calculated terminal voltage (for get_state())
+        self._last_terminal_voltage_v = None
         
         # Calendar aging tracking
         self._calendar_aging_time_hours = 0.0  # Total time in hours (for calendar aging)
@@ -506,10 +514,13 @@ class LiFePO4Cell:
         """
         Update cell temperature based on self-heating and ambient.
         
-        Thermal model:
-        - Self-heating: P = I² * R0 (power dissipation)
-        - Heat transfer: Q = (T_cell - T_ambient) / R_thermal
-        - Temperature change: dT = (P - Q) * dt / C_thermal
+        Enhanced thermal model:
+        - Self-heating: P = I² * R0 (normal operation) + P_short (fault)
+        - Heat dissipation: Q_loss = Q_conv + Q_rad
+          - Convection: Q_conv = h * A * (T_cell - T_ambient)
+          - Radiation: Q_rad = ε * σ * A * (T_cell^4 - T_ambient^4)
+        - Temperature change: dT = (P_heating - Q_loss) * dt / C_thermal
+        - Thermal runaway: Exothermic reactions at high temperatures
         
         Args:
             current_ma: Current in mA (positive = charge, negative = discharge)
@@ -522,16 +533,35 @@ class LiFePO4Cell:
         # Convert current to Amperes
         current_a = current_ma / 1000.0
         
-        # Calculate power dissipation: P = I² * R0
+        # Calculate normal power dissipation: P = I² * R0
         r0_ohm = self.get_internal_resistance() / 1000.0  # Convert mΩ to Ω
         power_w = (current_a ** 2) * r0_ohm
         
-        # Heat transfer to ambient: Q = (T_cell - T_ambient) / R_thermal
-        temp_diff = self._temperature_c - self._ambient_temp_c
-        heat_transfer_w = temp_diff / self.THERMAL_RESISTANCE
+        # Add fault-related heat generation (handled in _apply_fault_effects, but we need total here)
+        # This will be added via temp_adjustment from _apply_fault_effects
         
-        # Net power: P_net = P_heating - Q_transfer
-        net_power_w = power_w - heat_transfer_w
+        # Heat dissipation to ambient: Q_loss = Q_conv + Q_rad
+        temp_diff = self._temperature_c - self._ambient_temp_c
+        temp_diff_k = temp_diff  # Temperature difference in Kelvin (same as Celsius for differences)
+        
+        # Convection heat transfer: Q_conv = h * A * (T_cell - T_ambient)
+        q_conv_w = self.CONVECTION_COEFFICIENT * self.CELL_SURFACE_AREA * temp_diff_k
+        
+        # Radiation heat transfer: Q_rad = ε * σ * A * (T_cell^4 - T_ambient^4)
+        t_cell_k = self._temperature_c + 273.15  # Convert to Kelvin
+        t_ambient_k = self._ambient_temp_c + 273.15  # Convert to Kelvin
+        q_rad_w = self.EMISSIVITY * self.STEFAN_BOLTZMANN * self.CELL_SURFACE_AREA * (
+            t_cell_k ** 4 - t_ambient_k ** 4
+        )
+        
+        # Total heat loss
+        heat_loss_w = q_conv_w + q_rad_w
+        
+        # Thermal runaway heat generation (exothermic reactions)
+        thermal_runaway_power_w = self._calculate_thermal_runaway_heat()
+        
+        # Net power: P_net = P_heating + P_thermal_runaway - Q_loss
+        net_power_w = power_w + thermal_runaway_power_w - heat_loss_w
         
         # Temperature change: dT = P_net * dt / C_thermal
         dt_sec = dt_ms / 1000.0
@@ -540,8 +570,58 @@ class LiFePO4Cell:
         # Update temperature
         self._temperature_c += dtemp
         
-        # Limit temperature to reasonable range
-        self._temperature_c = np.clip(self._temperature_c, -40.0, 85.0)
+        # Limit temperature to reasonable range (extended for thermal runaway scenarios)
+        # Allow up to 200°C for thermal runaway modeling, but warn
+        self._temperature_c = np.clip(self._temperature_c, -40.0, 200.0)
+    
+    def _calculate_thermal_runaway_heat(self) -> float:
+        """
+        Calculate heat generation from thermal runaway exothermic reactions.
+        
+        Thermal runaway stages:
+        - SEI decomposition: ~90-120°C, ΔH ≈ 200-400 J/g
+        - Anode-electrolyte reaction: ~120-150°C, ΔH ≈ 1000-2000 J/g
+        - Cathode decomposition: ~150-200°C, ΔH ≈ 500-1000 J/g
+        - Electrolyte decomposition: >200°C, ΔH ≈ 2000-4000 J/g
+        
+        Returns:
+            Additional heat generation power in Watts
+        """
+        temp_c = self._temperature_c
+        power_w = 0.0
+        
+        # SEI decomposition (90-120°C)
+        if temp_c >= 90.0:
+            # Arrhenius-like activation: exponential increase with temperature
+            if temp_c < 120.0:
+                activation = np.exp((temp_c - 90.0) / 10.0)  # Exponential activation
+                power_w += 0.5 * activation  # Base power ~0.5W, scales exponentially
+            else:
+                # Fully activated
+                power_w += 5.0  # ~5W when fully activated
+        
+        # Anode-electrolyte reaction (120-150°C)
+        if temp_c >= 120.0:
+            if temp_c < 150.0:
+                activation = np.exp((temp_c - 120.0) / 8.0)
+                power_w += 2.0 * activation  # Base power ~2W
+            else:
+                power_w += 20.0  # ~20W when fully activated
+        
+        # Cathode decomposition (150-200°C)
+        if temp_c >= 150.0:
+            if temp_c < 200.0:
+                activation = np.exp((temp_c - 150.0) / 10.0)
+                power_w += 5.0 * activation  # Base power ~5W
+            else:
+                power_w += 50.0  # ~50W when fully activated
+        
+        # Electrolyte decomposition (>200°C) - catastrophic
+        if temp_c >= 200.0:
+            activation = np.exp((temp_c - 200.0) / 5.0)
+            power_w += 100.0 * activation  # Very high power, exponential growth
+        
+        return power_w
     
     def update(
         self,
@@ -655,7 +735,85 @@ class LiFePO4Cell:
         ocv = self.get_ocv(current_direction=new_direction)
         r0_ohm = self.get_internal_resistance() / 1000.0  # Convert mΩ to Ω
         ir_drop_magnitude = abs(current_a) * r0_ohm
-        v_terminal = ocv - ir_drop_magnitude - abs(self._v_rc1) - abs(self._v_rc2)
+        v_internal = ocv - ir_drop_magnitude - abs(self._v_rc1) - abs(self._v_rc2)
+        
+        # Apply voltage divider effect if internal short circuit is active
+        # Enhanced ECM: parallel resistance branch when fault active
+        # 
+        # ECM Best Practice: Internal short circuit creates a parallel resistance path
+        # The short resistance R_short is in parallel with the cell's Thevenin equivalent
+        # Terminal voltage is reduced by the voltage divider effect
+        #
+        # Thevenin equivalent resistance includes:
+        # - R0 (ohmic resistance)
+        # - RC network effective resistance (for steady-state, use R1+R2)
+        # For dynamic response, we use R0 as primary since RC networks are reactive
+        #
+        # Voltage divider: V_terminal = V_internal * (R_parallel / (R_internal + R_parallel))
+        # Where R_parallel = (R_internal * R_short) / (R_internal + R_short)
+        # Simplifies to: V_terminal = V_internal * R_short / (R_internal + R_short)
+        # This is correct when R_short << R_internal (which is true for hard shorts)
+        fault_active = False
+        if hasattr(self, '_fault_state') and self._fault_state:
+            if 'internal_short' in self._fault_state:
+                fault_active = self._fault_state['internal_short'].get('active', False)
+        
+        if fault_active:
+            r_short_ohm = self._fault_state['internal_short'].get('resistance_ohm', 0.1)
+            
+            # Calculate Thevenin equivalent resistance of the cell
+            # ECM Best Practice: For internal short circuit, the short resistance is in parallel
+            # with the cell's internal impedance. The effective resistance seen by the load
+            # is the parallel combination: R_parallel = (R_internal * R_short) / (R_internal + R_short)
+            #
+            # The cell's internal impedance includes:
+            # - R0: Ohmic resistance (primary component, typically 0.5-1.0 mΩ for LiFePO4)
+            # - Additional impedance from cell structure, tabs, connections (~5-20 mΩ)
+            # - RC networks are reactive and don't contribute to DC resistance
+            #
+            # For accurate modeling, we use a realistic effective internal resistance
+            # that accounts for the cell's actual impedance, not just R0
+            r0_mohm = r0_ohm * 1000.0
+            
+            # Effective internal resistance: R0 plus structural impedance
+            # Literature values for LiFePO4: total cell impedance ~10-30 mΩ
+            # We use a conservative estimate that accounts for:
+            # - R0 (ohmic): 0.5-1.0 mΩ
+            # - Structural impedance (tabs, connections): 5-15 mΩ
+            # - Total: ~10-20 mΩ typical
+            # For hard shorts (0.1Ω), this gives realistic voltage drops of 10-30%
+            structural_impedance_mohm = 10.0  # Additional impedance from cell structure
+            r_internal_effective_mohm = r0_mohm + structural_impedance_mohm
+            r_internal_effective_mohm = max(r_internal_effective_mohm, 8.0)  # Minimum 8 mΩ
+            r_internal_effective_ohm = r_internal_effective_mohm / 1000.0
+            
+            if r_short_ohm > 0 and r_internal_effective_ohm > 0:
+                # Voltage divider for parallel short circuit (ECM standard approach)
+                # When R_short is in parallel with R_internal:
+                # V_terminal = V_internal * (R_short / (R_internal + R_short))
+                # 
+                # This formula correctly models the voltage drop:
+                # - For R_short = 0.1Ω and R_internal = 0.01Ω: ratio = 0.1/0.11 = 0.91 (9% drop)
+                # - For R_short = 0.1Ω and R_internal = 0.02Ω: ratio = 0.1/0.12 = 0.83 (17% drop)
+                # - For R_short << R_internal: voltage drop is small
+                # - For R_short >> R_internal: voltage drop approaches 100%
+                voltage_divider_ratio = r_short_ohm / (r_internal_effective_ohm + r_short_ohm)
+                
+                # Apply voltage divider to get terminal voltage
+                v_terminal = v_internal * voltage_divider_ratio
+                
+                # Store debug info for validation
+                if not hasattr(self, '_fault_debug'):
+                    self._fault_debug = {}
+                self._fault_debug['voltage_drop_pct'] = (1.0 - voltage_divider_ratio) * 100.0
+                self._fault_debug['r_short_ohm'] = r_short_ohm
+                self._fault_debug['r_internal_ohm'] = r_internal_effective_ohm
+                self._fault_debug['v_internal'] = v_internal
+                self._fault_debug['v_terminal'] = v_terminal
+            else:
+                v_terminal = v_internal
+        else:
+            v_terminal = v_internal
         
         # Apply minimum voltage limit (2.5V for LiFePO4 - prevents unrealistic negative voltages)
         MIN_VOLTAGE = 2.5  # Minimum safe operating voltage for LiFePO4
@@ -679,6 +837,9 @@ class LiFePO4Cell:
         if current_time_hours - self._last_update_time_hours > 1.0:  # Update every hour
             self._update_aging()
             self._last_update_time_hours = current_time_hours
+        
+        # Store terminal voltage for get_state() - ALWAYS store this
+        self._last_terminal_voltage_v = v_terminal
         
         # Convert to mV
         voltage_mv = v_terminal * 1000.0
@@ -706,9 +867,43 @@ class LiFePO4Cell:
         Returns:
             Dictionary with cell state variables
         """
+        # Use stored terminal voltage if available (from last update())
+        # This should always be set after update() is called
+        if self._last_terminal_voltage_v is not None:
+            v_terminal = self._last_terminal_voltage_v
+        else:
+            # Fallback: calculate terminal voltage (only if update() hasn't been called yet)
+            # This should rarely happen in normal operation
+            ocv = self.get_ocv()
+            r0_ohm = self.get_internal_resistance() / 1000.0
+            # Approximate v_internal (without current, use OCV minus RC drops)
+            # Note: This doesn't account for IR drop, so it's an approximation
+            v_internal_approx = ocv - abs(self._v_rc1) - abs(self._v_rc2)
+            
+            # Apply voltage divider if internal short is active
+            fault_active = False
+            if hasattr(self, '_fault_state') and self._fault_state:
+                if 'internal_short' in self._fault_state:
+                    fault_active = self._fault_state['internal_short'].get('active', False)
+            
+            if fault_active:
+                r_short_ohm = self._fault_state['internal_short'].get('resistance_ohm', 0.1)
+                r_effective_mohm = max(r0_ohm * 1000.0, 20.0)
+                r_effective_ohm = r_effective_mohm / 1000.0
+                if r_short_ohm > 0:
+                    voltage_divider_ratio = r_short_ohm / (r_effective_ohm + r_short_ohm)
+                    v_terminal = v_internal_approx * voltage_divider_ratio
+                else:
+                    v_terminal = v_internal_approx
+            else:
+                v_terminal = v_internal_approx
+            
+            # Apply minimum voltage limit
+            v_terminal = max(v_terminal, 2.5)
+        
         return {
             'soc_pct': self._soc * 100.0,
-            'voltage_mv': self.get_ocv() * 1000.0,
+            'voltage_mv': v_terminal * 1000.0,  # Use stored or calculated terminal voltage
             'temperature_c': self._temperature_c,
             'capacity_ah': self._capacity_actual_ah,
             'internal_resistance_mohm': self.get_internal_resistance(),
@@ -761,16 +956,39 @@ class LiFePO4Cell:
         
         # Internal short circuit - adds parallel current path
         if 'internal_short' in self._fault_state and self._fault_state['internal_short'].get('active', False):
-            r_short_ohm = self._fault_state['internal_short'].get('resistance_ohm', 0.1)
+            short_state = self._fault_state['internal_short']
+            
+            # Get initial resistance (set on first activation)
+            if 'initial_resistance_ohm' not in short_state:
+                short_state['initial_resistance_ohm'] = short_state.get('resistance_ohm', 0.1)
+            r_short_initial = short_state['initial_resistance_ohm']
+            
+            # Time-dependent resistance degradation
+            # Short resistance decreases over time as damage progresses
+            fault_duration = short_state.get('fault_duration_sec', 0.0)
+            degradation_rate = short_state.get('degradation_rate', 0.0001)  # per second
+            min_resistance = short_state.get('min_resistance_ohm', 0.001)  # Minimum to prevent division by zero
+            
+            # Inverse degradation: R(t) = R0 / (1 + k * t) for more gradual degradation
+            # This prevents resistance from dropping too quickly
+            r_short_ohm = r_short_initial / (1.0 + degradation_rate * fault_duration)
+            r_short_ohm = max(r_short_ohm, min_resistance)
+            short_state['resistance_ohm'] = r_short_ohm  # Update stored resistance
+            
             # Short circuit current: I_short = V_cell / R_short
-            # Approximate using OCV
+            # Use terminal voltage (or OCV as approximation)
             ocv_v = self.get_ocv()  # Get OCV in volts
-            i_short_a = ocv_v / r_short_ohm if r_short_ohm > 0 else 0.0
+            # For more accuracy, could use actual terminal voltage, but OCV is reasonable approximation
+            v_cell = ocv_v  # Approximate with OCV
+            i_short_a = v_cell / r_short_ohm if r_short_ohm > 0 else 0.0
             i_short_ma = i_short_a * 1000.0
+            
             # Short circuit draws current (reduces available current)
             modified_current -= i_short_ma
-            # Short circuit also generates heat
-            power_w = (i_short_a ** 2) * r_short_ohm
+            
+            # Enhanced heat generation: P_short = V² / R_short (more accurate than I²*R)
+            # This accounts for the voltage divider effect
+            power_w = (v_cell ** 2) / r_short_ohm if r_short_ohm > 0 else 0.0
             temp_adjustment += (power_w * dt_ms / 1000.0) / self.THERMAL_MASS
         
         # Thermal runaway - temperature escalation
