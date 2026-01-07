@@ -816,8 +816,31 @@ class LiFePO4Cell:
             v_terminal = v_internal
         
         # Apply minimum voltage limit (2.5V for LiFePO4 - prevents unrealistic negative voltages)
-        MIN_VOLTAGE = 2.5  # Minimum safe operating voltage for LiFePO4
+        # Check if overdischarge fault is active - if so, use fault's voltage limit
+        MIN_VOLTAGE = 2.5  # Default minimum safe operating voltage for LiFePO4
+        
+        # Check for overdischarge fault - allows discharging below normal minimum
+        if hasattr(self, '_fault_state') and self._fault_state:
+            if 'overdischarge' in self._fault_state and self._fault_state['overdischarge'].get('active', False):
+                voltage_limit_mv = self._fault_state['overdischarge'].get('voltage_limit_mv', 2500.0)
+                voltage_limit_v = voltage_limit_mv / 1000.0
+                # Overdischarge fault allows voltage to drop below normal minimum
+                # Use the fault's voltage limit instead of default 2.5V
+                MIN_VOLTAGE = voltage_limit_v
+        
         v_terminal = max(v_terminal, MIN_VOLTAGE)
+        
+        # Apply overcharge voltage limit if fault is active
+        # Overcharge allows cell to charge beyond normal maximum (typically 3.65V for LiFePO4)
+        if hasattr(self, '_fault_state') and self._fault_state:
+            if 'overcharge' in self._fault_state and self._fault_state['overcharge'].get('active', False):
+                voltage_limit_mv = self._fault_state['overcharge'].get('voltage_limit_mv', 3700.0)
+                voltage_limit_v = voltage_limit_mv / 1000.0
+                # Allow voltage to reach the overcharge limit (remove normal max voltage constraint)
+                # The cell can now charge up to voltage_limit_v
+                # Note: We don't clamp here, we just allow it to exceed normal limits
+                # The actual voltage is determined by the ECM model during charging
+                pass  # Overcharge fault allows exceeding normal limits, no clamping needed
         
         # Update calendar aging
         # Track time and storage conditions

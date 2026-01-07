@@ -1,0 +1,11 @@
+name: "Overdischarge"
+description: "Force discharging below V_min on cell 5 - Industry standard limits: 3% SOC or 2.65V"
+mode: deterministic
+seed: 42
+faults:
+  - type: overdischarge
+    target: cell_5
+    parameters:
+      voltage_limit_mv: 2650.0  # 2.65V undervoltage limit per industry standards
+    timing:
+      trigger_soc: 3.0  # 3% SOC trigger per industry standards
