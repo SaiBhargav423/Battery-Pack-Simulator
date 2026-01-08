@@ -265,7 +265,7 @@ class SILFrameEncoder:
             data_payload.extend(pack_int32_be(pack_current_ma))
             
             # Sensor temperature (deci-°C)
-            sensor_temp = sensor_temp_ddegc if sensor_temp_ddegc is not None else 250  # 25.0°C default
+            sensor_temp = sensor_temp_ddegc if sensor_temp_ddegc is not None else 320  # 32.0°C default
             data_payload.extend(pack_int32_be(sensor_temp))
             
             # Power (W)

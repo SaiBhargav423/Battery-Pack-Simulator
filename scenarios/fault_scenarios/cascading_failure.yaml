@@ -1,0 +1,14 @@
+name: "Cascading Failure"
+description: "Cascading failure from cell 5 to adjacent cells"
+mode: deterministic
+seed: 42
+faults:
+  - type: cascading_failure
+    target: pack
+    parameters:
+      trigger_probability: 0.1
+      source_cell: 5
+      affected_cells: [4, 6]
+    timing:
+      trigger_time_sec: 300.0
+

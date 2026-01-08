@@ -1,0 +1,12 @@
+name: "Abnormal Self-Discharge"
+description: "Constant leakage current on cell 5"
+mode: deterministic
+seed: 42
+faults:
+  - type: abnormal_self_discharge
+    target: cell_5
+    parameters:
+      leakage_current_ma: 10.0
+    timing:
+      trigger_time_sec: 0.0
+

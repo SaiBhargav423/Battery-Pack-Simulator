@@ -1,0 +1,11 @@
+name: "Overcharge - Cell Voltage Based"
+description: "Overcharge fault triggered when cell 5 voltage exceeds 3.65V"
+mode: deterministic
+seed: 42
+faults:
+  - type: overcharge
+    target: cell_5
+    parameters:
+      voltage_limit_mv: 3650.0
+    timing:
+      trigger_condition: voltage

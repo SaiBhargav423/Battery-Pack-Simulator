@@ -1,0 +1,12 @@
+name: "Overcharge - SOC Based"
+description: "Overcharge fault triggered when pack SOC reaches 100% on cell 5"
+mode: deterministic
+seed: 42
+faults:
+  - type: overcharge
+    target: cell_5
+    parameters:
+      voltage_limit_mv: 3650.0
+    timing:
+      trigger_condition: soc
+      trigger_soc: 100.0

@@ -11,11 +11,11 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 from pathlib import Path
 
-from sil_bms.pc_simulator.plant.pack_model import BatteryPack16S
+from plant.pack_model import BatteryPack16S
 
 def run_simulation(mode='discharge', current_amp=1.0, duration_sec=None, target_soc_pct=None,
                    initial_soc_pct=100.0, dt_ms=100.0, 
-                   temperature_c=25.0, save_plot=False, plot_filename=None, save_csv=True, csv_filename=None):
+                   temperature_c=32.0, save_plot=False, plot_filename=None, save_csv=True, csv_filename=None):
     """
     Run pack charge/discharge simulation with real-time stepping.
     
@@ -358,8 +358,8 @@ Examples:
                        help='Initial SOC in percent (default: 100.0)')
     parser.add_argument('--dt', type=float, default=100.0,
                        help='Time step in milliseconds (default: 100.0ms for real-time simulation)')
-    parser.add_argument('--temperature', type=float, default=25.0,
-                       help='Temperature in Celsius (default: 25.0)')
+    parser.add_argument('--temperature', type=float, default=32.0,
+                       help='Temperature in Celsius (default: 32.0)')
     parser.add_argument('--plot', action='store_true',
                        help='Generate plot (default: False, CSV is always saved)')
     parser.add_argument('--plot-filename', type=str, default=None,

@@ -1,0 +1,12 @@
+name: "Insulation Fault"
+description: "Insulation resistance to ground"
+mode: deterministic
+seed: 42
+faults:
+  - type: insulation_fault
+    target: pack
+    parameters:
+      insulation_resistance_ohm: 1000.0
+    timing:
+      trigger_time_sec: 300.0
+

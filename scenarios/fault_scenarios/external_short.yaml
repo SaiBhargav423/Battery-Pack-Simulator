@@ -1,0 +1,13 @@
+name: "External Short Circuit"
+description: "External short across pack terminals"
+mode: deterministic
+seed: 42
+faults:
+  - type: external_short_circuit
+    target: pack
+    parameters:
+      resistance_ohm: 0.05
+    timing:
+      trigger_time_sec: 60.0
+      duration_sec: 300
+

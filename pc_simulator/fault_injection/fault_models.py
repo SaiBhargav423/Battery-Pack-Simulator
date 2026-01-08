@@ -22,17 +22,21 @@ from .fault_types import FaultType
 
 def apply_internal_short_circuit(cell, resistance_ohm: float,
                                  time_evolution: Optional[Callable] = None,
-                                 current_time: float = 0.0) -> None:
+                                 current_time: float = 0.0,
+                                 degradation_rate: float = 0.0001,
+                                 min_resistance_ohm: float = 0.001) -> None:
     """
     Apply internal short circuit fault to cell.
     
-    Adds parallel resistance R_short across cell terminals.
+    Adds parallel resistance R_short across cell terminals with time-dependent degradation.
     
     Args:
         cell: Cell model to modify
-        resistance_ohm: Short circuit resistance (0.01-1Ω for hard, 100-1000Ω for soft)
+        resistance_ohm: Initial short circuit resistance (0.01-1Ω for hard, 100-1000Ω for soft)
         time_evolution: Optional function(time) -> resistance_ohm for time-dependent evolution
         current_time: Current simulation time
+        degradation_rate: Resistance degradation rate per second (default: 0.0001)
+        min_resistance_ohm: Minimum resistance to prevent division by zero (default: 0.001Ω)
     """
     if time_evolution is not None:
         resistance_ohm = time_evolution(current_time)
@@ -41,10 +45,26 @@ def apply_internal_short_circuit(cell, resistance_ohm: float,
     if not hasattr(cell, '_fault_state'):
         cell._fault_state = {}
     
-    cell._fault_state['internal_short'] = {
-        'resistance_ohm': max(0.001, resistance_ohm),  # Minimum 1mΩ
-        'active': True
-    }
+    # Initialize or update fault state
+    if 'internal_short' not in cell._fault_state:
+        cell._fault_state['internal_short'] = {
+            'resistance_ohm': max(min_resistance_ohm, resistance_ohm),
+            'active': True,
+            'fault_start_time': current_time,
+            'fault_duration_sec': 0.0,
+            'degradation_rate': degradation_rate,
+            'min_resistance_ohm': min_resistance_ohm,
+            'initial_resistance_ohm': resistance_ohm
+        }
+    else:
+        # Update existing fault state
+        cell._fault_state['internal_short']['active'] = True
+        if 'initial_resistance_ohm' not in cell._fault_state['internal_short']:
+            cell._fault_state['internal_short']['initial_resistance_ohm'] = resistance_ohm
+        if 'degradation_rate' not in cell._fault_state['internal_short']:
+            cell._fault_state['internal_short']['degradation_rate'] = degradation_rate
+        if 'min_resistance_ohm' not in cell._fault_state['internal_short']:
+            cell._fault_state['internal_short']['min_resistance_ohm'] = min_resistance_ohm
 
 
 def apply_external_short_circuit(pack, resistance_ohm: float,

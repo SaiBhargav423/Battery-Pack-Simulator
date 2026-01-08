@@ -43,3 +43,14 @@ Thumbs.db
 .coverage
 htmlcov/
 
+# Test files (created by AI for verification)
+test_*
+**/test_*
+
+# Output folders (simulation results)
+output/
+output_*/
+**/output/
+**/output_*/
+pc_simulator/output/
+pc_simulator/output_*/

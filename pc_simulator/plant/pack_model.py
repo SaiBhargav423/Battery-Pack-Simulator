@@ -24,7 +24,7 @@ class BatteryPack16S:
     Parameters:
         cell_capacity_ah: Nominal capacity per cell in Ah (default: 100Ah)
         initial_soc_pct: Initial pack SOC in percent (default: 50%)
-        ambient_temp_c: Ambient temperature in °C (default: 25.0)
+        ambient_temp_c: Ambient temperature in °C (default: 32.0)
         capacity_variation_sigma: Capacity mismatch standard deviation (default: 1.5%)
         soc_variation_sigma: Initial SOC variation standard deviation (default: 2%)
         resistance_variation: Internal resistance variation range (default: ±10%)
@@ -38,7 +38,7 @@ class BatteryPack16S:
         self,
         cell_capacity_ah: float = 100.0,
         initial_soc_pct: float = 50.0,
-        ambient_temp_c: float = 25.0,
+        ambient_temp_c: float = 32.0,
         capacity_variation_sigma: float = 0.4,  # Reduced from 1.5% to match real data (~6.8mV spread)
         soc_variation_sigma: float = 0.25,  # Reduced from 2.0% to match real data
         resistance_variation: float = 0.025,  # Reduced from 0.1 (10%) to 0.025 (2.5%) to match real data

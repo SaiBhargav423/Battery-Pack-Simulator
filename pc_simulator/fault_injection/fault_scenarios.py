@@ -85,7 +85,8 @@ def create_fault_injector_from_scenario(scenario: Dict[str, Any],
         
         target = fault_config.get('target', 0)
         if isinstance(target, str) and target.startswith('cell_'):
-            target = int(target.split('_')[1])
+            # Convert from 1-based (cell_1 to cell_16) to 0-based (0 to 15)
+            target = int(target.split('_')[1]) - 1
         
         parameters = fault_config.get('parameters', {})
         timing = fault_config.get('timing', {})

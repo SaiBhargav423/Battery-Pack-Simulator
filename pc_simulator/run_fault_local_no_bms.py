@@ -25,7 +25,6 @@ from typing import Optional, List
 import yaml
 
 from plant.pack_model import BatteryPack16S
-from plant.run_cell_simulation import run_simulation
 from fault_injection.fault_framework import FaultInjector, FaultMode
 from fault_injection.fault_scenarios import load_scenario, create_fault_injector_from_scenario
 from fault_injection.monte_carlo import MonteCarloFaultInjector, EnsembleStatistics
@@ -40,13 +39,16 @@ def run_fault_simulation(
     target_soc_pct: Optional[float] = None,
     initial_soc_pct: float = 100.0,
     dt_ms: float = 100.0,
-    temperature_c: float = 25.0,
+    temperature_c: float = 32.0,
     monte_carlo: bool = False,
     n_runs: int = 100,
     sampling_strategy: str = 'lhs',
     statistical_analysis: bool = False,
     output_dir: str = 'output',
-    save_plots: bool = True
+    save_plots: bool = True,
+    wait_for_fault: bool = False,
+    extend_after_fault: Optional[float] = None,
+    max_duration_sec: Optional[float] = None
 ):
     """
     Run fault injection simulation.
@@ -114,13 +116,42 @@ def run_fault_simulation(
             max_duration_sec=max_duration_sec
         )
         
-        # Save result
-        result_df = pd.DataFrame([result])
+        # Save summary result
+        result_summary = {k: v for k, v in result.items() if k != 'time_series_data'}
+        result_df = pd.DataFrame([result_summary])
         result_df.to_csv(output_path / 'simulation_result.csv', index=False)
         
-        print(f"\nSimulation completed:")
-        print(f"  Final SOC: {result.get('final_soc_pct', 0):.2f}%")
-        print(f"  Final Voltage: {result.get('final_voltage_mv', 0)/1000:.2f}V")
+        # Save detailed time-series data (BMS-like data)
+        if 'time_series_data' in result:
+            ts_data = result['time_series_data']
+            
+            # Create DataFrame with all cell voltages and temperatures
+            df_dict = {
+                'time_s': np.round(ts_data['time'], 6),
+                'soc_percent': np.round(ts_data['soc'], 6),
+                'pack_voltage_V': np.round(ts_data['pack_voltage'], 6),
+                'pack_current_A': np.round(ts_data['pack_current'], 6),
+            }
+            
+            # Add all 16 cell voltages
+            for i in range(16):
+                df_dict[f'cell_{i+1}_V'] = np.round(ts_data['cell_voltages'][:, i], 6)
+            
+            # Add all 16 cell temperatures
+            for i in range(16):
+                df_dict[f'cell_{i+1}_temp_C'] = np.round(ts_data['cell_temperatures'][:, i], 6)
+            
+            ts_df = pd.DataFrame(df_dict)
+            ts_df.to_csv(output_path / 'timeseries_data.csv', index=False, float_format='%.6f')
+            
+            print(f"\nSimulation completed:")
+            print(f"  Final SOC: {result.get('final_soc_pct', 0):.2f}%")
+            print(f"  Final Voltage: {result.get('final_voltage_mv', 0)/1000:.2f}V")
+            print(f"  Time-series data saved: {len(ts_df)} rows, {len(ts_df.columns)} columns")
+        else:
+            print(f"\nSimulation completed:")
+            print(f"  Final SOC: {result.get('final_soc_pct', 0):.2f}%")
+            print(f"  Final Voltage: {result.get('final_voltage_mv', 0)/1000:.2f}V")
     
     print(f"\nResults saved to: {output_path}")
 
@@ -166,6 +197,9 @@ def run_single_fault_simulation(
     time_data = []
     soc_data = []
     voltage_data = []
+    current_data = []
+    cell_voltages_data = []  # List of arrays, shape: (n_steps, 16)
+    cell_temperatures_data = []  # List of arrays, shape: (n_steps, 16)
     
     # Determine stopping condition
     fault_triggered = False
@@ -212,7 +246,10 @@ def run_single_fault_simulation(
             # Store data
             time_data.append(elapsed_time)
             soc_data.append(pack.get_pack_soc())
-            voltage_data.append(pack.get_pack_voltage())
+            voltage_data.append(pack.get_pack_voltage() / 1000.0)  # Convert mV to V
+            current_data.append(current_ma / 1000.0)  # Convert mA to A
+            cell_voltages_data.append(pack.get_cell_voltages() / 1000.0)  # Convert mV to V, shape: (16,)
+            cell_temperatures_data.append(pack.get_cell_temperatures())  # Already in °C, shape: (16,)
             
             step += 1
             elapsed_time += dt_ms / 1000.0
@@ -239,7 +276,10 @@ def run_single_fault_simulation(
                 pack.update(current_ma=current_ma, dt_ms=dt_ms, ambient_temp_c=temperature_c)
                 time_data.append(elapsed_time)
                 soc_data.append(pack.get_pack_soc())
-                voltage_data.append(pack.get_pack_voltage())
+                voltage_data.append(pack.get_pack_voltage() / 1000.0)  # Convert mV to V
+                current_data.append(current_ma / 1000.0)  # Convert mA to A
+                cell_voltages_data.append(pack.get_cell_voltages() / 1000.0)  # Convert mV to V
+                cell_temperatures_data.append(pack.get_cell_temperatures())  # Already in °C
                 step += 1
                 elapsed_time += dt_ms / 1000.0
         else:  # charge
@@ -252,7 +292,10 @@ def run_single_fault_simulation(
                 pack.update(current_ma=current_ma, dt_ms=dt_ms, ambient_temp_c=temperature_c)
                 time_data.append(elapsed_time)
                 soc_data.append(pack.get_pack_soc())
-                voltage_data.append(pack.get_pack_voltage())
+                voltage_data.append(pack.get_pack_voltage() / 1000.0)  # Convert mV to V
+                current_data.append(current_ma / 1000.0)  # Convert mA to A
+                cell_voltages_data.append(pack.get_cell_voltages() / 1000.0)  # Convert mV to V
+                cell_temperatures_data.append(pack.get_cell_temperatures())  # Already in °C
                 step += 1
                 elapsed_time += dt_ms / 1000.0
     
@@ -263,6 +306,16 @@ def run_single_fault_simulation(
         if fault_state.triggered and fault_state.trigger_time is not None:
             fault_trigger_times.append(fault_state.trigger_time)
     
+    # Prepare time-series data
+    time_series_data = {
+        'time': np.array(time_data),
+        'soc': np.array(soc_data),
+        'pack_voltage': np.array(voltage_data),
+        'pack_current': np.array(current_data),
+        'cell_voltages': np.array(cell_voltages_data),  # Shape: (n_steps, 16)
+        'cell_temperatures': np.array(cell_temperatures_data)  # Shape: (n_steps, 16)
+    }
+    
     return {
         'final_soc_pct': pack.get_pack_soc(),
         'final_voltage_mv': pack.get_pack_voltage(),
@@ -270,7 +323,8 @@ def run_single_fault_simulation(
         'n_steps': step,
         'faults_triggered': fault_stats['active_faults'],
         'fault_trigger_times_sec': fault_trigger_times,
-        'first_fault_time_sec': min(fault_trigger_times) if fault_trigger_times else None
+        'first_fault_time_sec': min(fault_trigger_times) if fault_trigger_times else None,
+        'time_series_data': time_series_data  # Include time-series data
     }
 
 
@@ -367,7 +421,7 @@ Examples:
                        help='Initial SOC in percent')
     parser.add_argument('--dt', type=float, default=100.0,
                        help='Time step in milliseconds')
-    parser.add_argument('--temperature', type=float, default=25.0,
+    parser.add_argument('--temperature', type=float, default=32.0,
                        help='Ambient temperature in °C')
     parser.add_argument('--monte-carlo', action='store_true',
                        help='Enable Monte Carlo ensemble runs')

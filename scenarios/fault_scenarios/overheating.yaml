@@ -6,7 +6,7 @@ faults:
   - type: overheating
     target: cell_5
     parameters:
-      temperature_c: 65.0
+      temperature_c: 60.0
     timing:
-      trigger_time_sec: 90.0
+      trigger_time_sec: 180.0
 

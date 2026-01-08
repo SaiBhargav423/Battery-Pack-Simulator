@@ -1,0 +1,13 @@
+name: "Electrolyte Leakage"
+description: "Electrolyte leakage effects on cell 5"
+mode: deterministic
+seed: 42
+faults:
+  - type: electrolyte_leakage
+    target: cell_5
+    parameters:
+      resistance_multiplier: 1.3
+      leakage_current_ma: 5.0
+    timing:
+      trigger_time_sec: 180.0
+

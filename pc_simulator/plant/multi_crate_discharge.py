@@ -95,7 +95,7 @@ def plot_multi_crate_comparison():
     capacity_ah = 100.0
     initial_soc = 1.0  # 100%
     target_soc = 0.05  # 5%
-    temperature_c = 25.0
+    temperature_c = 32.0
     dt_ms = 10.0
     
     # C-rates to test

@@ -178,7 +178,7 @@ def main():
     pack = BatteryPack16S(
         cell_capacity_ah=100.0,
         initial_soc_pct=args.soc,
-        ambient_temp_c=25.0,
+        ambient_temp_c=32.0,
         seed=42
     )
     print(f"  [OK] Pack initialized: {pack.get_pack_voltage()/1000:.2f}V, SOC: {pack.get_pack_soc():.1f}%")
@@ -322,7 +322,7 @@ def main():
                     fault_injector.apply_to_cell(cell, i)
             
             # Update battery pack
-            pack.update(current_ma=current_ma, dt_ms=dt_ms, ambient_temp_c=25.0)
+            pack.update(current_ma=current_ma, dt_ms=dt_ms, ambient_temp_c=32.0)
             
             # Get true values from pack
             true_v = pack.get_cell_voltages()      # mV, array[16]
@@ -339,7 +339,7 @@ def main():
                 # XBB protocol: convert temperatures from centi-°C to °C
                 # measured_t is in centi-°C, convert to °C
                 temp_cell_c = np.mean(measured_t / 100.0)  # Average cell temperature in °C
-                temp_pcb_c = 25.0  # Use ambient temperature as PCB temperature (or could use average)
+                temp_pcb_c = 32.0  # Use ambient temperature as PCB temperature (or could use average)
                 
                 frame_data = {
                     'pack_current_ma': int(measured_i),  # Already in milli-Amperes (signed)

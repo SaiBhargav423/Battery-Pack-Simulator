@@ -1,0 +1,12 @@
+name: "Open Circuit"
+description: "High resistance open circuit on cell 5"
+mode: deterministic
+seed: 42
+faults:
+  - type: open_circuit
+    target: cell_5
+    parameters:
+      resistance_ohm: 1000000.0
+    timing:
+      trigger_time_sec: 120.0
+

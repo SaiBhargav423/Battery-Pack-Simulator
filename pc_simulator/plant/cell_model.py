@@ -30,7 +30,7 @@ class LiFePO4Cell:
     Parameters:
         capacity_ah: Nominal capacity in Ah (default: 100Ah)
         initial_soc: Initial state of charge (0.0 to 1.0, default: 0.5)
-        temperature_c: Initial temperature in °C (default: 25.0)
+        temperature_c: Initial temperature in °C (default: 32.0)
         cycles: Number of charge/discharge cycles (default: 0)
     """
     
@@ -290,9 +290,9 @@ class LiFePO4Cell:
         self,
         capacity_ah: float = 100.0,
         initial_soc: float = 0.5,
-        temperature_c: float = 25.0,
+        temperature_c: float = 32.0,
         cycles: int = 0,
-        ambient_temp_c: float = 25.0,
+        ambient_temp_c: float = 32.0,
         resistance_multiplier: float = 1.0
     ):
         """
@@ -301,9 +301,9 @@ class LiFePO4Cell:
         Args:
             capacity_ah: Nominal capacity in Ah (default: 100Ah)
             initial_soc: Initial state of charge (0.0 to 1.0, default: 0.5)
-            temperature_c: Initial temperature in °C (default: 25.0)
+            temperature_c: Initial temperature in °C (default: 32.0)
             cycles: Number of charge/discharge cycles (default: 0)
-            ambient_temp_c: Ambient temperature in °C (default: 25.0)
+            ambient_temp_c: Ambient temperature in °C (default: 32.0)
             resistance_multiplier: Base resistance multiplier for cell-to-cell variation (default: 1.0)
         """
         # Store nominal capacity

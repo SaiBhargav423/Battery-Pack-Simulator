@@ -1,0 +1,17 @@
+name: "Thermal Propagation"
+description: "Thermal coupling between adjacent cells"
+mode: deterministic
+seed: 42
+faults:
+  - type: thermal_propagation
+    target: pack
+    parameters:
+      correlation_coefficient: 0.7
+    timing:
+      trigger_time_sec: 180.0
+correlations:
+  - type: thermal_propagation
+    cells: [5, 6, 7]
+    correlation_matrix: [[1.0, 0.7, 0.5], [0.7, 1.0, 0.7], [0.5, 0.7, 1.0]]
+    copula: gaussian
+

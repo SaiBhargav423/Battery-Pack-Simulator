@@ -264,12 +264,46 @@ class FaultInjector:
                 if trigger_time is not None and self._current_time >= trigger_time:
                     should_trigger = True
                 
-                # SOC-based trigger
+                # SOC-based trigger (for non-overcharge faults)
                 trigger_soc = fault_state.timing.get('trigger_soc')
                 if trigger_soc is not None and pack_state:
                     current_soc = pack_state.get('pack_soc_pct', 50.0)
-                    if current_soc <= trigger_soc:
-                        should_trigger = True
+                    # For overcharge, use voltage-based trigger instead (see below)
+                    # For other faults (discharge), trigger when SOC <= threshold
+                    if fault_state.fault_type != FaultType.OVERCHARGE:
+                        if current_soc <= trigger_soc:
+                            should_trigger = True
+                
+                # Overcharge trigger: can trigger on voltage >= 3.65V OR SOC >= 100%
+                # Check trigger_condition in timing to determine which condition(s) to check
+                if fault_state.fault_type == FaultType.OVERCHARGE and pack_state:
+                    cell_voltages_mv = pack_state.get('cell_voltages_mv', [])
+                    cell_socs_pct = pack_state.get('cell_socs_pct', [])
+                    current_soc = pack_state.get('pack_soc_pct', 50.0)
+                    
+                    # Get trigger condition from timing config
+                    # "soc" = only check SOC, "voltage" = only check voltage, "both" or None = check both
+                    trigger_condition = fault_state.timing.get('trigger_condition', 'both')
+                    
+                    # Check voltage condition (if trigger_condition is "voltage" or "both")
+                    if trigger_condition in ['voltage', 'both']:
+                        voltage_limit_mv = 3650.0  # 3.65V overvoltage limit
+                        if isinstance(fault_state.target, int) and 0 <= fault_state.target < len(cell_voltages_mv):
+                            target_cell_voltage_mv = cell_voltages_mv[fault_state.target]
+                            if target_cell_voltage_mv >= voltage_limit_mv:
+                                should_trigger = True
+                    
+                    # Check SOC condition (if trigger_condition is "soc" or "both")
+                    if trigger_condition in ['soc', 'both']:
+                        # Check target cell SOC first (preferred), then pack SOC as fallback
+                        if isinstance(fault_state.target, int) and 0 <= fault_state.target < len(cell_socs_pct):
+                            target_cell_soc = cell_socs_pct[fault_state.target]
+                            # Use 99.99 to account for floating point precision
+                            if target_cell_soc >= 99.99:
+                                should_trigger = True
+                        # Fallback to pack SOC if cell SOC not available
+                        elif current_soc >= 99.99:
+                            should_trigger = True
                 
                 # Probabilistic trigger
                 trigger_model = fault_state.timing.get('trigger_model')
@@ -325,10 +359,42 @@ class FaultInjector:
             fault_type = fault_state.fault_type
             params = fault_state.parameters
             
+            # Calculate fault duration for time-dependent effects
+            fault_duration_sec = 0.0
+            if fault_state.trigger_time is not None:
+                fault_duration_sec = self._current_time - fault_state.trigger_time
+            
             if fault_type == FaultType.INTERNAL_SHORT_CIRCUIT_HARD:
-                apply_internal_short_circuit(cell, params.get('resistance_ohm', 0.1))
+                # Pass degradation parameters if available
+                degradation_rate = params.get('degradation_rate', 0.0001)
+                min_resistance = params.get('min_resistance_ohm', 0.001)
+                apply_internal_short_circuit(
+                    cell, 
+                    params.get('resistance_ohm', 0.1),
+                    current_time=self._current_time,
+                    degradation_rate=degradation_rate,
+                    min_resistance_ohm=min_resistance
+                )
+                # Update fault duration in cell's fault state
+                if hasattr(cell, '_fault_state') and 'internal_short' in cell._fault_state:
+                    cell._fault_state['internal_short']['fault_duration_sec'] = fault_duration_sec
+                    if 'fault_start_time' not in cell._fault_state['internal_short']:
+                        cell._fault_state['internal_short']['fault_start_time'] = fault_state.trigger_time or 0.0
             elif fault_type == FaultType.INTERNAL_SHORT_CIRCUIT_SOFT:
-                apply_internal_short_circuit(cell, params.get('resistance_ohm', 500.0))
+                degradation_rate = params.get('degradation_rate', 0.00005)  # Slower for soft shorts
+                min_resistance = params.get('min_resistance_ohm', 10.0)  # Higher minimum for soft shorts
+                apply_internal_short_circuit(
+                    cell,
+                    params.get('resistance_ohm', 500.0),
+                    current_time=self._current_time,
+                    degradation_rate=degradation_rate,
+                    min_resistance_ohm=min_resistance
+                )
+                # Update fault duration
+                if hasattr(cell, '_fault_state') and 'internal_short' in cell._fault_state:
+                    cell._fault_state['internal_short']['fault_duration_sec'] = fault_duration_sec
+                    if 'fault_start_time' not in cell._fault_state['internal_short']:
+                        cell._fault_state['internal_short']['fault_start_time'] = fault_state.trigger_time or 0.0
             elif fault_type == FaultType.CAPACITY_FADE:
                 apply_capacity_fade(cell, params.get('fade_factor', 0.9))
             elif fault_type == FaultType.RESISTANCE_INCREASE:
