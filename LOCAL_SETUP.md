@@ -108,8 +108,8 @@ Edit `.env` with your database credentials if needed:
 DB_HOST=148.113.31.152
 DB_PORT=3306
 DB_NAME=appdb
-DB_USER=bms-hil
-DB_PASSWORD=Pearl@123
+DB_USER=your_username_here
+DB_PASSWORD=your_password_here
 DB_SECONDARY_HOST=148.113.31.149
 ```
 
