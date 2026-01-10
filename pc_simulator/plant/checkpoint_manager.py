@@ -91,7 +91,7 @@ def save_current_model_state(checkpoint_name="checkpoint_1"):
     import sys
     import os
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
-    from sil_bms.pc_simulator.plant.cell_model import LiFePO4Cell
+    from pc_simulator.plant.cell_model import LiFePO4Cell
     
     # Create a cell instance to access class attributes
     cell = LiFePO4Cell()

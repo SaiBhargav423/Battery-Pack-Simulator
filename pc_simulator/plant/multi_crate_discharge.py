@@ -15,7 +15,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 try:
-    from sil_bms.pc_simulator.plant.cell_model import LiFePO4Cell
+    from pc_simulator.plant.cell_model import LiFePO4Cell
 except ImportError:
     from cell_model import LiFePO4Cell
 

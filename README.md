@@ -1,6 +1,6 @@
 # Battery Pack Simulator
 
-A **Software-in-the-Loop (SIL) Battery Management System (BMS) Simulator** for 16-cell series (16S) LiFePO₄ battery packs. This simulator provides realistic battery behavior modeling, AFE (Analog Front End) measurement simulation, and UART communication protocols for testing BMS hardware and software.
+A **Hardware-in-the-Loop (HIL) Battery Management System (BMS) Simulator** for 16-cell series (16S) LiFePO₄ battery packs. This simulator provides realistic battery behavior modeling, AFE (Analog Front End) measurement simulation, and UART communication protocols for testing BMS hardware with simulated battery inputs.
 
 **Repository:** [XBattery-Energy/Battery-Pack-Simulator](https://github.com/XBattery-Energy/Battery-Pack-Simulator)
 
@@ -82,7 +82,7 @@ pip install -r requirements.txt
 
 The project has two primary scripts:
 
-1. **`main.py`** - Full SIL simulator with AFE wrapper and UART communication (for BMS testing)
+1. **`main.py`** - Full HIL simulator with AFE wrapper and UART communication (for BMS hardware testing)
    - **Primary use**: BMS hardware testing with `--port COM3`
    - **Secondary use**: Test AFE wrapper and protocol encoding in print-only mode (no `--port`)
    - Supports fault injection with `--fault-scenario`

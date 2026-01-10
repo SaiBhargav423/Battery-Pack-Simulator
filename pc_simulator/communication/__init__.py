@@ -1,2 +1,2 @@
-"""Communication modules for SIL BMS simulation."""
+"""Communication modules for HIL BMS simulation."""
 

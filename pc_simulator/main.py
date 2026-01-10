@@ -1,18 +1,18 @@
 """
-Main Integration Script for SIL BMS Simulator
+Main Integration Script for HIL BMS Simulator
 
 This script integrates:
 - Battery Pack Model (16S)
 - AFE Measurement Wrapper
 - UART Transmitter
 
-Runs simulation and sends AFE measurement frames to MCU via UART.
+Runs simulation and sends AFE measurement frames to real BMS hardware via UART.
 """
 
 import sys
 import os
 
-# Add parent directory to path so we can import sil_bms
+# Add parent directory to path for imports
 # File is at: Battery Pack Simulator/pc_simulator/main.py
 # We need to add the parent directory to the path
 script_dir = os.path.dirname(os.path.abspath(__file__))  # Battery Pack Simulator/pc_simulator
@@ -96,7 +96,7 @@ def print_frame_data(frame_data: dict, sequence: int):
 
 def main():
     """Main simulation loop."""
-    parser = argparse.ArgumentParser(description='SIL BMS Simulator')
+    parser = argparse.ArgumentParser(description='HIL BMS Simulator')
     parser.add_argument('--port', type=str, default=None,
                        help='Serial port (e.g., COM3 or /dev/ttyUSB0). If not specified, only prints data.')
     parser.add_argument('--baudrate', type=int, default=921600,
@@ -146,7 +146,7 @@ def main():
     args = parser.parse_args()
     
     print("\n" + "=" * 80)
-    print("SIL BMS Simulator - Main Integration")
+    print("HIL BMS Simulator - Main Integration")
     print("=" * 80)
     print(f"Configuration:")
     print(f"  Serial Port: {args.port if args.port else 'None (print only)'}")

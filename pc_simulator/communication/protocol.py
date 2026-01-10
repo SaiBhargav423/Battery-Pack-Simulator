@@ -1,7 +1,7 @@
 """
 UART Protocol Definitions
 
-Binary UART protocol for SIL BMS communication:
+Binary UART protocol for HIL BMS communication:
 - Frame structure: SOF | msg_id | len | seq | payload | CRC16 | EOF
 - Message types: AFE_MEAS_FRAME (PC→MCU), BMS_APP_FRAME (MCU→PC)
 - CRC16-CCITT algorithm

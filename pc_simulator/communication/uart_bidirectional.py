@@ -1,5 +1,5 @@
 """
-Bidirectional UART Communication for SIL Testing
+Bidirectional UART Communication for HIL Testing
 
 Provides bidirectional communication with BMS hardware:
 - TX: Send AFE measurement frames (PC → BMS)
@@ -29,7 +29,7 @@ from communication.protocol import (
 
 class BidirectionalUART:
     """
-    Bidirectional UART communication for SIL testing.
+    Bidirectional UART communication for HIL testing.
     
     Features:
     - Separate TX/RX threads for concurrent operation

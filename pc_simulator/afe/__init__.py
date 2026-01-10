@@ -1,2 +1,2 @@
-"""AFE (Analog Front End) measurement wrapper for SIL BMS simulation."""
+"""AFE (Analog Front End) measurement wrapper for HIL BMS simulation."""
 

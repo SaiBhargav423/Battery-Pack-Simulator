@@ -1,2 +1,2 @@
-"""Battery plant models for SIL BMS simulation."""
+"""Battery plant models for HIL BMS simulation."""
 

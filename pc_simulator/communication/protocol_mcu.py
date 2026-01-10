@@ -1,5 +1,5 @@
 """
-UART Protocol for MCU SIL Communication
+UART Protocol for MCU HIL Communication
 
 Matches MCU-side frame format:
 - Frame: [0xAA][0x01][LENGTH_MSB][LENGTH_LSB][DATA...][CRC16_MSB][CRC16_LSB][0x55]
@@ -12,10 +12,10 @@ from typing import Optional
 import numpy as np
 
 # Frame markers (matching MCU)
-SIL_FRAME_HEADER = 0xAA
-SIL_FRAME_FOOTER = 0x55
-SIL_FRAME_VERSION = 0x01
-SIL_FRAME_OVERHEAD = 7  # header + version + length(2) + crc(2) + footer
+HIL_FRAME_HEADER = 0xAA
+HIL_FRAME_FOOTER = 0x55
+HIL_FRAME_VERSION = 0x01
+HIL_FRAME_OVERHEAD = 7  # header + version + length(2) + crc(2) + footer
 
 # BMS Configuration (defaults - should match battery_system_cfg.h)
 BS_NR_OF_STRINGS = 1
@@ -79,11 +79,11 @@ def pack_float_be(value: float) -> bytes:
     return struct.pack('>f', float(value))
 
 
-class SILFrameEncoder:
+class HILFrameEncoder:
     """
-    Encodes BMS data into MCU-compatible SIL frame format.
+    Encodes BMS data into MCU-compatible HIL frame format.
     
-    Data layout matches UART_SIL_ParseAndUpdateDatabase parsing order:
+    Data layout matches UART_HIL_ParseAndUpdateDatabase parsing order:
     1. Cell voltages [strings][modules][cells] (int16, 2 bytes each)
     2. Module voltages [strings][modules] (uint32, 4 bytes each)
     3. Temperatures [strings][modules][sensors] (int16, 2 bytes each)
@@ -359,12 +359,12 @@ class SILFrameEncoder:
         
         # Build frame: [HEADER][VERSION][LENGTH_MSB][LENGTH_LSB][DATA...][CRC16_MSB][CRC16_LSB][FOOTER]
         frame = bytearray()
-        frame.append(SIL_FRAME_HEADER)  # 0xAA
-        frame.append(SIL_FRAME_VERSION)  # 0x01
+        frame.append(HIL_FRAME_HEADER)  # 0xAA
+        frame.append(HIL_FRAME_VERSION)  # 0x01
         frame.extend(pack_uint16_be(data_length))  # Length (big-endian)
         frame.extend(data_payload)  # Data
         frame.extend(pack_uint16_be(crc))  # CRC (big-endian)
-        frame.append(SIL_FRAME_FOOTER)  # 0x55
+        frame.append(HIL_FRAME_FOOTER)  # 0x55
         
         return bytes(frame)
     

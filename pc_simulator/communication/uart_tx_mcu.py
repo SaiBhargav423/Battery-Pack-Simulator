@@ -1,5 +1,5 @@
 """
-UART Transmitter for MCU-compatible SIL frames
+UART Transmitter for MCU-compatible HIL frames
 
 Extends base UARTTransmitter to use MCU frame format.
 """
@@ -10,12 +10,12 @@ import logging
 from typing import Optional, Dict
 import numpy as np
 from communication.uart_tx import UARTTransmitter
-from communication.protocol_mcu import SILFrameEncoder
+from communication.protocol_mcu import HILFrameEncoder
 
 
 class MCUCompatibleUARTTransmitter(UARTTransmitter):
     """
-    UART Transmitter that sends MCU-compatible SIL frames.
+    UART Transmitter that sends MCU-compatible HIL frames.
     Extends base UARTTransmitter with MCU frame format.
     """
     
@@ -61,7 +61,7 @@ class MCUCompatibleUARTTransmitter(UARTTransmitter):
         )
         
         # Create MCU frame encoder
-        self.frame_encoder = SILFrameEncoder(
+        self.frame_encoder = HILFrameEncoder(
             num_strings=num_strings,
             num_modules=num_modules,
             num_cells=num_cells,
