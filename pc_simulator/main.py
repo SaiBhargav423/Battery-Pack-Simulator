@@ -34,6 +34,13 @@ from communication.uart_tx import UARTTransmitter
 from communication.uart_tx_mcu import MCUCompatibleUARTTransmitter
 from communication.uart_tx_xbb import XBBUARTTransmitter
 
+# Optional bidirectional support
+try:
+    from communication.uart_bidirectional import BidirectionalUART
+    BIDIRECTIONAL_AVAILABLE = True
+except ImportError:
+    BIDIRECTIONAL_AVAILABLE = False
+
 # Fault injection imports
 try:
     from fault_injection.fault_scenarios import load_scenario, create_fault_injector_from_scenario
@@ -111,6 +118,8 @@ def main():
     parser.add_argument('--protocol', type=str, default='xbb',
                        choices=['xbb', 'mcu', 'legacy'],
                        help='Protocol type: xbb (default), mcu, or legacy')
+    parser.add_argument('--bidirectional', action='store_true',
+                       help='Enable bidirectional communication (receive BMS data)')
     
     # Fault injection arguments
     if FAULT_INJECTION_AVAILABLE:
@@ -199,44 +208,65 @@ def main():
     # 3. Create UART Transmitter (if port specified)
     tx = None
     if args.port:
-        protocol_type = args.protocol.upper()
-        print(f"Initializing UART Transmitter on {args.port} ({protocol_type} protocol)...")
-        try:
-            if args.protocol == 'xbb':
-                tx = XBBUARTTransmitter(
+        # Check for bidirectional mode
+        if args.bidirectional and BIDIRECTIONAL_AVAILABLE:
+            print(f"Initializing Bidirectional UART on {args.port}...")
+            try:
+                tx = BidirectionalUART(
                     port=args.port,
                     baudrate=args.baudrate,
-                    frame_rate_hz=args.rate,
-                    verbose=args.verbose,
-                    print_frames=args.print_frames
-                )
-            elif args.protocol == 'mcu':
-                tx = MCUCompatibleUARTTransmitter(
-                    port=args.port,
-                    baudrate=args.baudrate,
-                    frame_rate_hz=args.rate,
-                    verbose=args.verbose,
-                    num_strings=1,
-                    num_modules=1,
-                    num_cells=16,
-                    num_temp_sensors=16
-                )
-            else:  # legacy
-                tx = UARTTransmitter(
-                    port=args.port,
-                    baudrate=args.baudrate,
-                    frame_rate_hz=args.rate,
+                    tx_rate_hz=args.rate,
                     verbose=args.verbose
                 )
-            if tx.start():
-                print(f"  [OK] UART transmitter started ({protocol_type})")
-            else:
-                print(f"  [ERROR] Failed to start UART transmitter")
+                if tx.start():
+                    print(f"  [OK] Bidirectional UART started (TX: {args.rate} Hz)")
+                else:
+                    print(f"  [ERROR] Failed to start bidirectional UART")
+                    tx = None
+            except Exception as e:
+                print(f"  [ERROR] Error initializing bidirectional UART: {e}")
+                print(f"  Continuing in print-only mode...")
                 tx = None
-        except Exception as e:
-            print(f"  [ERROR] Error initializing UART: {e}")
-            print(f"  Continuing in print-only mode...")
-            tx = None
+        else:
+            # Use existing unidirectional transmitters
+            protocol_type = args.protocol.upper()
+            print(f"Initializing UART Transmitter on {args.port} ({protocol_type} protocol)...")
+            try:
+                if args.protocol == 'xbb':
+                    tx = XBBUARTTransmitter(
+                        port=args.port,
+                        baudrate=args.baudrate,
+                        frame_rate_hz=args.rate,
+                        verbose=args.verbose,
+                        print_frames=args.print_frames
+                    )
+                elif args.protocol == 'mcu':
+                    tx = MCUCompatibleUARTTransmitter(
+                        port=args.port,
+                        baudrate=args.baudrate,
+                        frame_rate_hz=args.rate,
+                        verbose=args.verbose,
+                        num_strings=1,
+                        num_modules=1,
+                        num_cells=16,
+                        num_temp_sensors=16
+                    )
+                else:  # legacy
+                    tx = UARTTransmitter(
+                        port=args.port,
+                        baudrate=args.baudrate,
+                        frame_rate_hz=args.rate,
+                        verbose=args.verbose
+                    )
+                if tx.start():
+                    print(f"  [OK] UART transmitter started ({protocol_type})")
+                else:
+                    print(f"  [ERROR] Failed to start UART transmitter")
+                    tx = None
+            except Exception as e:
+                print(f"  [ERROR] Error initializing UART: {e}")
+                print(f"  Continuing in print-only mode...")
+                tx = None
     else:
         print("  No serial port specified - running in print-only mode")
     
@@ -322,7 +352,21 @@ def main():
                     fault_injector.apply_to_cell(cell, i)
             
             # Update battery pack
-            pack.update(current_ma=current_ma, dt_ms=dt_ms, ambient_temp_c=32.0)
+            # Check if current should be gated based on BMS MOSFET state
+            effective_current_ma = current_ma
+            if tx is not None and hasattr(tx, 'get_bms_state'):
+                bms_state = tx.get_bms_state()
+                # Gate current if MOSFETs are open
+                if current_ma > 0 and not bms_state.get('mosfet_charge', True):
+                    effective_current_ma = 0.0
+                    if args.verbose and frame_count % 100 == 0:  # Print every 100 frames
+                        print(f"[GATE] Charge current gated - MOSFET open")
+                elif current_ma < 0 and not bms_state.get('mosfet_discharge', True):
+                    effective_current_ma = 0.0
+                    if args.verbose and frame_count % 100 == 0:
+                        print(f"[GATE] Discharge current gated - MOSFET open")
+            
+            pack.update(current_ma=effective_current_ma, dt_ms=dt_ms, ambient_temp_c=32.0)
             
             # Get true values from pack
             true_v = pack.get_cell_voltages()      # mV, array[16]
@@ -342,7 +386,7 @@ def main():
                 temp_pcb_c = 32.0  # Use ambient temperature as PCB temperature (or could use average)
                 
                 frame_data = {
-                    'pack_current_ma': int(measured_i),  # Already in milli-Amperes (signed)
+                    'pack_current_ma': int(effective_current_ma),  # Use effective (gated) current
                     'pack_voltage_mv': int(pack.get_pack_voltage()),  # Already in milli-Volts
                     'temp_cell_c': float(temp_cell_c),  # Average cell temperature in °C
                     'temp_pcb_c': float(temp_pcb_c),  # PCB temperature in °C
@@ -355,7 +399,7 @@ def main():
                     'timestamp_ms': int((time.time() - start_time) * 1000),
                     'vcell_mv': measured_v.astype(np.uint16),        # Already in mV
                     'tcell_cc': measured_t.astype(np.int16),         # Already in centi-°C
-                    'pack_current_ma': int(measured_i),
+                    'pack_current_ma': int(effective_current_ma),  # Use effective (gated) current
                     'pack_voltage_mv': int(pack.get_pack_voltage()),
                     'status_flags': flags
                 }

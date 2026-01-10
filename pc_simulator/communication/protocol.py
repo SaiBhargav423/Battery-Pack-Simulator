@@ -190,6 +190,115 @@ class AFEMeasFrame:
         }
 
 
+class BMSAppFrame:
+    """BMS_APP_FRAME structure (MCU→PC)."""
+    
+    MSG_ID = MSG_ID_BMS_APP
+    
+    # Payload structure (adjust based on your actual BMS frame format)
+    # uint32 timestamp_ms
+    # uint16 mosfet_status (bit flags)
+    # uint16 protection_flags
+    # int32  bms_current_ma (actual measured current)
+    # uint32 bms_voltage_mv
+    # uint16 balancing_status[16] (per-cell balancing)
+    # uint8  fault_codes[8]
+    # uint32 bms_state_flags
+    
+    # Adjust PAYLOAD_FORMAT based on your actual BMS frame structure
+    # This is a template - modify to match your BMS protocol
+    PAYLOAD_FORMAT = '<I H H i I ' + 'H' * 16 + 'B' * 8 + 'I'
+    PAYLOAD_SIZE = 4 + 2 + 2 + 4 + 4 + 16*2 + 8 + 4  # 56 bytes
+    
+    # MOSFET Status Bits
+    MOSFET_CHARGE_ENABLED = 0x0001
+    MOSFET_DISCHARGE_ENABLED = 0x0002
+    MOSFET_CHARGE_OPEN = 0x0004
+    MOSFET_DISCHARGE_OPEN = 0x0008
+    
+    # Protection Flags
+    PROT_OVERVOLTAGE = 0x0001
+    PROT_UNDERVOLTAGE = 0x0002
+    PROT_OVERCURRENT_CHARGE = 0x0004
+    PROT_OVERCURRENT_DISCHARGE = 0x0008
+    PROT_OVERTEMPERATURE = 0x0010
+    PROT_UNDERTEMPERATURE = 0x0020
+    PROT_SHORT_CIRCUIT = 0x0040
+    PROT_CELL_IMBALANCE = 0x0080
+    
+    @staticmethod
+    def decode(frame: bytes) -> Optional[dict]:
+        """
+        Decode BMS_APP_FRAME from bytes.
+        
+        Args:
+            frame: Frame bytes
+            
+        Returns:
+            Dictionary with decoded data or None if invalid
+        """
+        # Check minimum frame size
+        if len(frame) < 7:  # SOF + msg_id + len + seq(2) + CRC(2) + EOF
+            return None
+        
+        # Check SOF and EOF
+        if frame[0] != SOF or frame[-1] != EOF:
+            return None
+        
+        # Extract header
+        msg_id, length, seq = struct.unpack('<BBH', frame[1:5])
+        
+        if msg_id != BMSAppFrame.MSG_ID:
+            return None
+        
+        # Check frame size
+        expected_size = 1 + 4 + length + 2 + 1  # SOF + header + payload + CRC + EOF
+        if len(frame) != expected_size:
+            return None
+        
+        # Extract payload
+        payload = frame[5:5+length]
+        
+        # Verify CRC
+        crc_data = frame[1:5+length]  # msg_id | len | seq | payload
+        expected_crc = crc16_ccitt(crc_data)
+        received_crc = struct.unpack('<H', frame[5+length:5+length+2])[0]
+        
+        if expected_crc != received_crc:
+            return None
+        
+        # Unpack payload
+        try:
+            unpacked = struct.unpack(BMSAppFrame.PAYLOAD_FORMAT, payload)
+            
+            timestamp_ms = unpacked[0]
+            mosfet_status = unpacked[1]
+            protection_flags = unpacked[2]
+            bms_current_ma = unpacked[3]
+            bms_voltage_mv = unpacked[4]
+            balancing_status = np.array(unpacked[5:21], dtype=np.uint16)
+            fault_codes = np.array(unpacked[21:29], dtype=np.uint8)
+            bms_state_flags = unpacked[29]
+            
+            return {
+                'timestamp_ms': timestamp_ms,
+                'mosfet_status': mosfet_status,
+                'protection_flags': protection_flags,
+                'bms_current_ma': bms_current_ma,
+                'bms_voltage_mv': bms_voltage_mv,
+                'balancing_status': balancing_status,
+                'fault_codes': fault_codes,
+                'bms_state_flags': bms_state_flags,
+                'sequence': seq,
+                # Convenience fields
+                'mosfet_charge': bool(mosfet_status & BMSAppFrame.MOSFET_CHARGE_ENABLED),
+                'mosfet_discharge': bool(mosfet_status & BMSAppFrame.MOSFET_DISCHARGE_ENABLED),
+                'protection_active': protection_flags != 0
+            }
+        except (struct.error, IndexError, ValueError) as e:
+            return None
+
+
 def validate_afe_meas_data(data: dict) -> Tuple[bool, Optional[str]]:
     """
     Validate AFE measurement data before encoding.
