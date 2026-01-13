@@ -1,17 +1,36 @@
 """
 UART Protocol for XBB Communication
 
-Frame Format:
-[0xA5] [0x33] [SubIndex: 0x0000] [DataLen: 80] [Data: 80 bytes] [0xB5] [CRC8]
+TX Frame Format (92 bytes total):
+[0xA5] [0x33] [SubIndex: 0x0000] [DataLen: 84] [Data: 84 bytes] [0xB5] [CRC8]
 
-Data Structure (20 int32 values, big-endian, 80 bytes total):
+TX Data Structure (21 int32 values, big-endian, 84 bytes total):
 - pack_current_A: 4 bytes (int32, milli_A)
 - pack_voltage_V: 4 bytes (int32, milli_V)
 - temp_cell_C: 4 bytes (int32, milli_degC)
 - temp_pcb_C: 4 bytes (int32, milli_degC)
 - cell_1_V through cell_16_V: 16 × 4 = 64 bytes (int32, milli_V each)
+- Counter: 4 bytes (int32, sequence number)
 
-Total Frame Size: 88 bytes
+RX Frame Format (118 bytes total):
+[0xA5] [0x33] [Length: 0x0070] [Payload: 112 bytes] [0xB5] [CRC8]
+
+RX Payload Structure (112 bytes):
+- timestamp_ms: 4 bytes (uint32, big-endian) - offset 0-3
+- protection_flags: 2 bytes (uint16, big-endian) - offset 4-5
+- soc: 4 bytes (float, big-endian) - offset 6-9
+- soh: 4 bytes (float, big-endian) - offset 10-13
+- soe: 4 bytes (float, big-endian) - offset 14-17
+- bms_current_ma: 4 bytes (int32, big-endian, signed) - offset 18-21
+- bms_voltage_mv: 4 bytes (uint32, big-endian) - offset 22-25
+- balancing_status[16]: 32 bytes (16 × uint16, big-endian) - offset 26-57
+- fault_codes[8]: 8 bytes (8 × uint8) - offset 58-65
+- pcb_temperature_ddegC: 2 bytes (int16, big-endian, signed) - offset 66-67
+- cell_temperatures_ddegC[4]: 8 bytes (4 × int16, big-endian, signed) - offset 68-75
+- cell_voltages_mv[16]: 32 bytes (16 × uint16, big-endian) - offset 76-107
+- sequence: 2 bytes (uint16, big-endian) - offset 108-109
+- mosfet_status: 2 bytes (uint16, big-endian) - offset 110-111
+
 CRC8 calculated over all bytes from 0xA5 through 0xB5 (excluding CRC8 byte itself)
 """
 
@@ -25,7 +44,9 @@ XBB_FRAME_HEADER = 0xA5
 XBB_FRAME_MSG_ID = 0x33
 XBB_FRAME_FOOTER = 0xB5
 XBB_SUBINDEX = 0x0000
-XBB_DATA_LENGTH = 80  # 20 int32 values × 4 bytes = 80 bytes
+XBB_DATA_LENGTH = 84  # 21 int32 values × 4 bytes = 84 bytes (20 data + 1 counter)
+XBB_RX_PAYLOAD_LENGTH = 112  # RX payload size in bytes (removed bms_state_flags: 116-4=112)
+XBB_RX_FRAME_LENGTH = 118  # Total RX frame size (1+1+2+112+1+1)
 
 
 # CRC8 Table (provided by user)
@@ -102,7 +123,8 @@ class XBBFrameEncoder:
         pack_voltage_mv: int,      # Pack voltage in milli-Volts (unsigned, but sent as signed int32)
         temp_cell_c: float,        # Cell temperature in °C (converted to milli_degC)
         temp_pcb_c: float,         # PCB temperature in °C (converted to milli_degC)
-        cell_voltages_mv: np.ndarray  # Cell voltages in milli-Volts (array[16])
+        cell_voltages_mv: np.ndarray,  # Cell voltages in milli-Volts (array[16])
+        counter: int = 0            # Sequence counter (int32)
     ) -> bytes:
         """
         Encode XBB frame with battery pack data.
@@ -115,7 +137,7 @@ class XBBFrameEncoder:
             cell_voltages_mv: Cell voltages in milli-Volts (array[16])
         
         Returns:
-            Encoded frame bytes (88 bytes total)
+            Encoded frame bytes (92 bytes total)
         """
         # Validate inputs
         if len(cell_voltages_mv) != 16:
@@ -129,7 +151,7 @@ class XBBFrameEncoder:
         # Note: voltages are typically positive, but we use signed int32 to match spec
         cell_voltages_int32 = cell_voltages_mv.astype(np.int32)
         
-        # Pack data payload (20 int32 values, big-endian, 80 bytes total)
+        # Pack data payload (21 int32 values, big-endian, 84 bytes total)
         data_payload = bytearray()
         
         # 1. pack_current_A (4 bytes, int32, milli_A)
@@ -148,17 +170,20 @@ class XBBFrameEncoder:
         for cell_voltage in cell_voltages_int32:
             data_payload.extend(pack_int32_be(cell_voltage))
         
+        # 6. Counter (4 bytes, int32)
+        data_payload.extend(pack_int32_be(counter))
+        
         # Verify data length
         if len(data_payload) != XBB_DATA_LENGTH:
             raise ValueError(f"Data payload length mismatch: got {len(data_payload)}, expected {XBB_DATA_LENGTH}")
         
-        # Build frame: [0xA5] [0x33] [SubIndex: 0x0000] [DataLen: 80] [Data: 80 bytes] [0xB5] [CRC8]
+        # Build frame: [0xA5] [0x33] [SubIndex: 0x0000] [DataLen: 84] [Data: 84 bytes] [0xB5] [CRC8]
         frame = bytearray()
         frame.append(XBB_FRAME_HEADER)  # 0xA5
         frame.append(XBB_FRAME_MSG_ID)  # 0x33
         frame.extend(struct.pack('>H', XBB_SUBINDEX))  # SubIndex: 0x0000 (big-endian, 2 bytes)
-        frame.extend(struct.pack('>H', XBB_DATA_LENGTH))  # DataLen: 80 (big-endian, 2 bytes)
-        frame.extend(data_payload)  # Data: 80 bytes
+        frame.extend(struct.pack('>H', XBB_DATA_LENGTH))  # DataLen: 84 (big-endian, 2 bytes)
+        frame.extend(data_payload)  # Data: 84 bytes
         frame.append(XBB_FRAME_FOOTER)  # 0xB5
         
         # Calculate CRC8 over all bytes from 0xA5 through 0xB5 (excluding CRC8 byte itself)
@@ -206,7 +231,7 @@ class XBBFrameEncoder:
             print("    " + "  |  ".join(cells))
         
         # Print hex representation
-        print(f"\nFrame Hex (88 bytes):")
+        print(f"\nFrame Hex (92 bytes):")
         hex_str = ' '.join([f'{b:02X}' for b in frame])
         # Print in groups of 16 bytes per line for readability
         for i in range(0, len(frame), 16):
@@ -227,4 +252,166 @@ class XBBFrameEncoder:
         print(f"  [0x{frame[-1]:02X}] CRC8")
         
         print("=" * 80 + "\n")
+
+
+class XBBFrameDecoder:
+    """
+    Decodes XBB RX frames from BMS.
+    
+    RX Frame Format (118 bytes total):
+    [0xA5] [0x33] [Length: 0x0070] [Payload: 112 bytes] [0xB5] [CRC8]
+    """
+    
+    @staticmethod
+    def decode(frame_bytes: bytes, verbose: bool = False) -> Optional[dict]:
+        """
+        Decode XBB RX frame and validate CRC8.
+        
+        Args:
+            frame_bytes: Raw frame bytes (118 bytes expected)
+            verbose: Enable debug output
+        
+        Returns:
+            Dictionary with parsed BMS data, or None if validation fails
+        """
+        # Validate frame length
+        if len(frame_bytes) != XBB_RX_FRAME_LENGTH:
+            if verbose:
+                print(f"[DEBUG] Frame length mismatch: got {len(frame_bytes)}, expected {XBB_RX_FRAME_LENGTH}")
+                print(f"[DEBUG] First 20 bytes: {' '.join([f'{b:02X}' for b in frame_bytes[:20]])}")
+            return None
+        
+        # Validate header
+        if frame_bytes[0] != XBB_FRAME_HEADER:
+            if verbose:
+                print(f"[DEBUG] Header mismatch: got 0x{frame_bytes[0]:02X}, expected 0x{XBB_FRAME_HEADER:02X}")
+            return None
+        
+        # Validate command
+        if frame_bytes[1] != XBB_FRAME_MSG_ID:
+            if verbose:
+                print(f"[DEBUG] Command mismatch: got 0x{frame_bytes[1]:02X}, expected 0x{XBB_FRAME_MSG_ID:02X}")
+            return None
+        
+        # Validate footer
+        if frame_bytes[-2] != XBB_FRAME_FOOTER:
+            if verbose:
+                print(f"[DEBUG] Footer mismatch: got 0x{frame_bytes[-2]:02X}, expected 0x{XBB_FRAME_FOOTER:02X}")
+            return None
+        
+        # Extract length field
+        length = struct.unpack('>H', frame_bytes[2:4])[0]
+        if length != XBB_RX_PAYLOAD_LENGTH:
+            if verbose:
+                print(f"[DEBUG] Length field mismatch: got {length} (0x{length:04X}), expected {XBB_RX_PAYLOAD_LENGTH} (0x{XBB_RX_PAYLOAD_LENGTH:04X})")
+            return None
+        
+        # Extract payload (112 bytes)
+        payload = frame_bytes[4:4+XBB_RX_PAYLOAD_LENGTH]
+        
+        # Validate CRC8
+        crc_data = frame_bytes[:-1]  # All bytes except CRC8
+        calculated_crc = xbb_generate_crc8(crc_data)
+        received_crc = frame_bytes[-1]
+        
+        if calculated_crc != received_crc:
+            if verbose:
+                print(f"[DEBUG] CRC mismatch: calculated 0x{calculated_crc:02X}, received 0x{received_crc:02X}")
+                print(f"[DEBUG] Frame hex (first 20): {' '.join([f'{b:02X}' for b in frame_bytes[:20]])}")
+                print(f"[DEBUG] Frame hex (last 10): {' '.join([f'{b:02X}' for b in frame_bytes[-10:]])}")
+        
+        # Parse payload according to 118-byte frame format (bms_state_flags removed)
+        try:
+            # timestamp_ms: 4 bytes (uint32, big-endian) - offset 0-3
+            timestamp_ms = struct.unpack('>I', payload[0:4])[0]
+            
+            # protection_flags: 2 bytes (uint16, big-endian) - offset 4-5
+            protection_flags = struct.unpack('>H', payload[4:6])[0]
+            
+            # SOC: 4 bytes (float, big-endian) - offset 6-9
+            soc_bytes = payload[6:10]
+            soc = struct.unpack('>f', soc_bytes)[0]  # Big-endian only
+            if np.isnan(soc) or np.isinf(soc) or not (0.0 <= soc <= 110.0):
+                soc = 0.0
+            
+            # SOH: 4 bytes (float, big-endian) - offset 10-13
+            soh_bytes = payload[10:14]
+            soh = struct.unpack('>f', soh_bytes)[0]  # Big-endian only
+            if np.isnan(soh) or np.isinf(soh) or not (0.0 <= soh <= 110.0):
+                soh = 0.0
+            
+            # SOE: 4 bytes (float, big-endian) - offset 14-17
+            soe_bytes = payload[14:18]
+            soe = struct.unpack('>f', soe_bytes)[0]  # Big-endian only
+            if np.isnan(soe) or np.isinf(soe) or not (0.0 <= soe <= 110.0):
+                soe = 0.0
+            
+            # bms_current_ma: 4 bytes (int32, big-endian, signed) - offset 18-21
+            bms_current_ma = struct.unpack('>i', payload[18:22])[0]
+            
+            # bms_voltage_mv: 4 bytes (uint32, big-endian) - offset 22-25
+            bms_voltage_mv = struct.unpack('>I', payload[22:26])[0]
+            
+            # balancing_status[16]: 32 bytes (16 × uint16, big-endian) - offset 26-57
+            balancing_status = []
+            for i in range(16):
+                offset = 26 + (i * 2)
+                balance_val = struct.unpack('>H', payload[offset:offset+2])[0]
+                balancing_status.append(balance_val)
+            
+            # fault_codes[8]: 8 bytes (8 × uint8) - offset 58-65
+            fault_codes = list(payload[58:66])
+            
+            # pcb_temperature_ddegC: 2 bytes (int16, big-endian, signed) - offset 66-67 (bms_state_flags removed)
+            pcb_temperature_ddegc = struct.unpack('>h', payload[66:68])[0]
+            pcb_temperature_c = pcb_temperature_ddegc / 10.0
+            
+            # cell_temperatures_ddegC[4]: 8 bytes (4 × int16, big-endian, signed) - offset 68-75
+            cell_temperatures_ddegc = []
+            for i in range(4):
+                offset = 68 + (i * 2)
+                temp_ddegc = struct.unpack('>h', payload[offset:offset+2])[0]
+                cell_temperatures_ddegc.append(temp_ddegc)
+            cell_temperatures_c = [t / 10.0 for t in cell_temperatures_ddegc]
+            
+            # cell_voltages_mv[16]: 32 bytes (16 × uint16, big-endian) - offset 76-107
+            cell_voltages_mv = []
+            for i in range(16):
+                offset = 76 + (i * 2)
+                voltage_mv = struct.unpack('>H', payload[offset:offset+2])[0]
+                cell_voltages_mv.append(voltage_mv)
+            
+            # sequence: 2 bytes (uint16, big-endian) - offset 108-109
+            sequence = struct.unpack('>H', payload[108:110])[0]
+            
+            # mosfet_status: 2 bytes (uint16, big-endian) - offset 110-111
+            mosfet_status = struct.unpack('>H', payload[110:112])[0]
+            
+            # Extract MOSFET bits
+            mosfet_charge = bool(mosfet_status & 0x01)
+            mosfet_discharge = bool(mosfet_status & 0x02)
+            
+            return {
+                'timestamp_ms': timestamp_ms,
+                'protection_flags': protection_flags,
+                'soc': soc,
+                'soh': soh,
+                'soe': soe,
+                'soc_bytes_raw': soc_bytes,  # Raw bytes for debugging
+                'soh_bytes_raw': soh_bytes,  # Raw bytes for debugging
+                'soe_bytes_raw': soe_bytes,  # Raw bytes for debugging
+                'bms_current_ma': bms_current_ma,
+                'bms_voltage_mv': bms_voltage_mv,
+                'balancing_status': balancing_status,
+                'fault_codes': fault_codes,
+                'pcb_temperature_c': pcb_temperature_c,
+                'cell_temperatures_c': cell_temperatures_c,
+                'cell_voltages_mv': cell_voltages_mv,
+                'sequence': sequence,
+                'mosfet_status': mosfet_status,
+                'mosfet_charge': mosfet_charge,
+                'mosfet_discharge': mosfet_discharge
+            }
+        except (struct.error, IndexError) as e:
+            return None
 

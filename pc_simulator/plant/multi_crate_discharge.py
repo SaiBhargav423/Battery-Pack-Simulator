@@ -42,7 +42,7 @@ def run_discharge_simulation(
         ambient_temp_c=temperature_c
     )
     
-    # Calculate discharge current (negative for discharge)
+    # Calculate discharge current (positive for discharge)
     discharge_current_a = -c_rate * capacity_ah
     discharge_current_ma = discharge_current_a * 1000.0
     

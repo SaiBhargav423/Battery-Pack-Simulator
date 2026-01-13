@@ -35,11 +35,12 @@ def run_simulation(mode='discharge', current_amp=1.0, duration_sec=None, target_
     capacity_ah = 100.0  # Fixed capacity per cell
     
     # Determine current direction
+    # Note: Positive current = discharge, Negative current = charge
     if mode.lower() == 'discharge':
-        current_ma = -current_amp * 1000.0  # Negative for discharge
+        current_ma = current_amp * 1000.0  # Positive for discharge
         mode_str = "Discharge"
     elif mode.lower() == 'charge':
-        current_ma = current_amp * 1000.0  # Positive for charge
+        current_ma = -current_amp * 1000.0  # Negative for charge
         mode_str = "Charge"
     else:
         raise ValueError(f"Mode must be 'charge' or 'discharge', got '{mode}'")

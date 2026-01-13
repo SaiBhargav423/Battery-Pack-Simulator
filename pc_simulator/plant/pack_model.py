@@ -129,7 +129,7 @@ class BatteryPack16S:
         Update all cells in the pack.
         
         Args:
-            current_ma: Pack current in mA (positive = charge, negative = discharge)
+            current_ma: Pack current in mA (positive = discharge, negative = charge)
             dt_ms: Time step in milliseconds
             ambient_temp_c: Ambient temperature in °C (optional)
         """
@@ -212,18 +212,23 @@ class BatteryPack16S:
         Get cell voltages in mV.
         
         Returns:
-            numpy array[16] of cell voltages in mV
+            numpy array[16] of cell voltages in mV (minimum 2500 mV = 2.5V)
         """
         voltages = np.zeros(self.NUM_CELLS)
         
         for i, cell in enumerate(self._cells):
             if self._fault_voltages[i] is not None:
-                # Return fault-injected voltage
-                voltages[i] = self._fault_voltages[i]
+                # Return fault-injected voltage (but still enforce minimum)
+                voltages[i] = max(self._fault_voltages[i], 2510.0)
             else:
                 # Get actual cell voltage
                 state = cell.get_state()
                 voltages[i] = state['voltage_mv']
+        
+        # Final safety check: ensure ALL cell voltages are at least 2510 mV (2.51V)
+        # This is critical for 0% SOC to ensure voltage > 2.5V
+        # Clamp all voltages to minimum 2510 mV
+        voltages = np.maximum(voltages, 2510.0)
         
         return voltages
     

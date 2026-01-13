@@ -33,6 +33,7 @@ from afe.wrapper import AFEWrapper, FaultType
 from communication.uart_tx import UARTTransmitter
 from communication.uart_tx_mcu import MCUCompatibleUARTTransmitter
 from communication.uart_tx_xbb import XBBUARTTransmitter
+from communication.uart_xbb_sequential import SequentialXBBUART
 
 # Optional bidirectional support
 try:
@@ -106,7 +107,7 @@ def main():
     parser.add_argument('--duration', type=float, default=10.0,
                        help='Simulation duration in seconds (default: 10.0). Use 0 for infinite/continuous transmission.')
     parser.add_argument('--current', type=float, default=50.0,
-                       help='Pack current in Amperes (default: 50.0, positive=charge)')
+                       help='Pack current in Amperes (default: 50.0, positive=discharge, negative=charge)')
     parser.add_argument('--soc', type=float, default=50.0,
                        help='Initial SOC in percent (default: 50.0)')
     parser.add_argument('--verbose', action='store_true',
@@ -120,6 +121,10 @@ def main():
                        help='Protocol type: xbb (default), mcu, or legacy')
     parser.add_argument('--bidirectional', action='store_true',
                        help='Enable bidirectional communication (receive BMS data)')
+    parser.add_argument('--sequential', action='store_true',
+                       help='Use sequential XBB communication (send-then-receive with retry)')
+    parser.add_argument('--no-mosfet-gate', action='store_true',
+                       help='Disable MOSFET-based current gating (use requested current regardless of BMS MOSFET state)')
     
     # Fault injection arguments
     if FAULT_INJECTION_AVAILABLE:
@@ -233,13 +238,25 @@ def main():
             print(f"Initializing UART Transmitter on {args.port} ({protocol_type} protocol)...")
             try:
                 if args.protocol == 'xbb':
-                    tx = XBBUARTTransmitter(
-                        port=args.port,
-                        baudrate=args.baudrate,
-                        frame_rate_hz=args.rate,
-                        verbose=args.verbose,
-                        print_frames=args.print_frames
-                    )
+                    if args.sequential:
+                        # Use sequential XBB communication
+                        tx = SequentialXBBUART(
+                            port=args.port,
+                            baudrate=args.baudrate,
+                            timeout=1.0,
+                            max_retries=10,
+                            verbose=args.verbose
+                        )
+                        print(f"  [MODE] Sequential XBB (send-then-receive with retry)")
+                    else:
+                        # Use standard XBB transmitter
+                        tx = XBBUARTTransmitter(
+                            port=args.port,
+                            baudrate=args.baudrate,
+                            frame_rate_hz=args.rate,
+                            verbose=args.verbose,
+                            print_frames=args.print_frames
+                        )
                 elif args.protocol == 'mcu':
                     tx = MCUCompatibleUARTTransmitter(
                         port=args.port,
@@ -299,7 +316,7 @@ def main():
         print(f"  Mode: CONTINUOUS (infinite loop - press Ctrl+C to stop)")
     else:
         print(f"  Total steps: {num_steps}")
-    print(f"  Current: {args.current} A ({'charge' if args.current > 0 else 'discharge'})")
+    print(f"  Current: {args.current} A ({'discharge' if args.current > 0 else 'charge'})")
     if FAULT_INJECTION_AVAILABLE and args.fault_scenario and args.extend_after_fault:
         print(f"  [Fault Timing] Will extend {args.extend_after_fault:.1f}s after fault triggers")
     print("\n" + "-" * 80)
@@ -309,6 +326,10 @@ def main():
     frame_count = 0
     fault_triggered = False
     first_fault_time_sec = None
+    
+    # Track MOSFET gating state
+    last_protection_flags = None
+    last_requested_current_ma = current_ma  # Track original requested current
     
     try:
         step = 0
@@ -353,18 +374,49 @@ def main():
             
             # Update battery pack
             # Check if current should be gated based on BMS MOSFET state
+            # Note: Positive current = discharge, Negative current = charge
             effective_current_ma = current_ma
-            if tx is not None and hasattr(tx, 'get_bms_state'):
+            if not args.no_mosfet_gate and tx is not None and hasattr(tx, 'get_bms_state'):
                 bms_state = tx.get_bms_state()
-                # Gate current if MOSFETs are open
-                if current_ma > 0 and not bms_state.get('mosfet_charge', True):
-                    effective_current_ma = 0.0
-                    if args.verbose and frame_count % 100 == 0:  # Print every 100 frames
-                        print(f"[GATE] Charge current gated - MOSFET open")
-                elif current_ma < 0 and not bms_state.get('mosfet_discharge', True):
-                    effective_current_ma = 0.0
-                    if args.verbose and frame_count % 100 == 0:
-                        print(f"[GATE] Discharge current gated - MOSFET open")
+                # Gate current if MOSFETs are open (only if BMS state is available)
+                if bms_state is not None:
+                    protection_flags = bms_state.get('protection_flags', 0)
+                    has_protection = (protection_flags != 0)
+                    
+                    # Check if protection just cleared (fault cleared)
+                    protection_cleared = (last_protection_flags is not None and 
+                                         last_protection_flags != 0 and 
+                                         protection_flags == 0)
+                    
+                    # Update last protection flags
+                    last_protection_flags = protection_flags
+                    
+                    # If no protection is active (no errors), always send the initially set current
+                    # This allows BMS to detect current and enable appropriate MOSFETs
+                    if not has_protection:
+                        # No errors - always send the original requested current
+                        effective_current_ma = current_ma
+                        # Update last requested current to track what we're sending
+                        last_requested_current_ma = current_ma
+                        if protection_cleared and args.verbose:
+                            print(f"[GATE] Protection cleared - Resuming current: {effective_current_ma/1000:.1f} A")
+                    # Only gate current if protection is active (errors present) AND MOSFETs are OFF
+                    else:
+                        # Protection active - gate current if MOSFETs are OFF
+                        if current_ma > 0 and not bms_state.get('mosfet_discharge', True):
+                            # Positive current = discharge, check discharge MOSFET
+                            effective_current_ma = 0.0
+                            if args.verbose and frame_count % 100 == 0:  # Print every 100 frames
+                                print(f"[GATE] Discharge current gated - Protection active (0x{protection_flags:04X}), MOSFET open")
+                        elif current_ma < 0 and not bms_state.get('mosfet_charge', True):
+                            # Negative current = charge, check charge MOSFET
+                            effective_current_ma = 0.0
+                            if args.verbose and frame_count % 100 == 0:
+                                print(f"[GATE] Charge current gated - Protection active (0x{protection_flags:04X}), MOSFET open")
+                        else:
+                            # Protection active but MOSFETs are ON - allow current
+                            effective_current_ma = current_ma
+                            last_requested_current_ma = current_ma
             
             pack.update(current_ma=effective_current_ma, dt_ms=dt_ms, ambient_temp_c=32.0)
             
@@ -378,6 +430,11 @@ def main():
                 true_v, true_t, true_i
             )
             
+            # Critical: Ensure all cell voltages are at least 2510 mV (2.51V)
+            # This is required for 0% SOC operation - cells must never go below 2.51V (ensures voltage > 2.5V)
+            # Clamp after AFE processing to account for noise that might push voltages below threshold
+            measured_v = np.maximum(measured_v, 2510.0)
+            
             # Prepare frame data based on protocol
             if args.protocol == 'xbb':
                 # XBB protocol: convert temperatures from centi-°C to °C
@@ -390,7 +447,7 @@ def main():
                     'pack_voltage_mv': int(pack.get_pack_voltage()),  # Already in milli-Volts
                     'temp_cell_c': float(temp_cell_c),  # Average cell temperature in °C
                     'temp_pcb_c': float(temp_pcb_c),  # PCB temperature in °C
-                    'cell_voltages_mv': measured_v.astype(np.int32)  # Cell voltages in milli-Volts
+                    'cell_voltages_mv': measured_v.astype(np.int32)  # Cell voltages in milli-Volts (clamped to >= 2500 mV)
                 }
             else:
                 # Legacy/MCU protocols
@@ -439,19 +496,50 @@ def main():
             print("\nStopping UART transmitter...")
             tx.stop()
             
-            # Print statistics
+            # Print statistics (handle different statistics formats)
             stats = tx.get_statistics()
             print(f"\nTransmission Statistics:")
-            print(f"  Frames sent: {stats['sent_count']}")
-            print(f"  Errors: {stats['error_count']}")
-            print(f"  Last error: {stats['last_error'] if stats['last_error'] else 'None'}")
-            print(f"  Final sequence: {stats['sequence']}")
+            # Handle different key names from different transmitter types
+            if 'sent_count' in stats:
+                print(f"  Frames sent: {stats['sent_count']}")
+            elif 'tx_count' in stats:
+                print(f"  Frames sent: {stats['tx_count']}")
+                if 'rx_count' in stats:
+                    print(f"  Frames received: {stats['rx_count']}")
+            else:
+                print(f"  Frames sent: {stats.get('tx_count', 'N/A')}")
+            
+            if 'error_count' in stats:
+                print(f"  Errors: {stats['error_count']}")
+            if 'retry_count' in stats:
+                print(f"  Retries: {stats['retry_count']}")
+            if 'last_error' in stats:
+                print(f"  Last error: {stats['last_error'] if stats['last_error'] else 'None'}")
+            if 'sequence' in stats:
+                print(f"  Final sequence: {stats['sequence']}")
+            elif 'tx_counter' in stats:
+                print(f"  TX Counter: {stats['tx_counter']}")
         
-        # Print pack state
+        # Print pack state - use last received BMS data if available
         print(f"\nFinal Pack State:")
-        print(f"  Pack Voltage: {pack.get_pack_voltage()/1000:.3f} V")
-        print(f"  Pack SOC: {pack.get_pack_soc():.1f}%")
-        print(f"  Pack Current: {pack.get_pack_current()/1000:.3f} A")
+        bms_state = None
+        if tx is not None and hasattr(tx, 'get_bms_state'):
+            bms_state = tx.get_bms_state()
+        
+        if bms_state is not None:
+            # Use last received BMS frame data
+            print(f"  Pack Voltage: {bms_state.get('bms_voltage_mv', 0)/1000:.3f} V")
+            print(f"  Pack SOC: {bms_state.get('soc', 0):.2f}%")
+            print(f"  Pack Current: {bms_state.get('bms_current_ma', 0)/1000:.3f} A")
+            if 'soh' in bms_state:
+                print(f"  Pack SOH: {bms_state.get('soh', 0):.2f}%")
+            if 'soe' in bms_state:
+                print(f"  Pack SOE: {bms_state.get('soe', 0):.2f}%")
+        else:
+            # Fallback to simulator's internal state
+            print(f"  Pack Voltage: {pack.get_pack_voltage()/1000:.3f} V")
+            print(f"  Pack SOC: {pack.get_pack_soc():.1f}%")
+            print(f"  Pack Current: {pack.get_pack_current()/1000:.3f} A")
         
         imbalance = pack.get_cell_imbalance()
         print(f"\nCell Imbalance:")
