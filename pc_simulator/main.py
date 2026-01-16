@@ -251,12 +251,12 @@ def main():
                     else:
                         # Use standard XBB transmitter
                         tx = XBBUARTTransmitter(
-                            port=args.port,
-                            baudrate=args.baudrate,
-                            frame_rate_hz=args.rate,
-                            verbose=args.verbose,
-                            print_frames=args.print_frames
-                        )
+                        port=args.port,
+                        baudrate=args.baudrate,
+                        frame_rate_hz=args.rate,
+                        verbose=args.verbose,
+                        print_frames=args.print_frames
+                    )
                 elif args.protocol == 'mcu':
                     tx = MCUCompatibleUARTTransmitter(
                         port=args.port,
@@ -406,14 +406,14 @@ def main():
                         if current_ma > 0 and not bms_state.get('mosfet_discharge', True):
                             # Positive current = discharge, check discharge MOSFET
                             effective_current_ma = 0.0
-                            if args.verbose and frame_count % 100 == 0:  # Print every 100 frames
+                    if args.verbose and frame_count % 100 == 0:  # Print every 100 frames
                                 print(f"[GATE] Discharge current gated - Protection active (0x{protection_flags:04X}), MOSFET open")
-                        elif current_ma < 0 and not bms_state.get('mosfet_charge', True):
+                    elif current_ma < 0 and not bms_state.get('mosfet_charge', True):
                             # Negative current = charge, check charge MOSFET
-                            effective_current_ma = 0.0
-                            if args.verbose and frame_count % 100 == 0:
+                        effective_current_ma = 0.0
+                    if args.verbose and frame_count % 100 == 0:
                                 print(f"[GATE] Charge current gated - Protection active (0x{protection_flags:04X}), MOSFET open")
-                        else:
+                    else:
                             # Protection active but MOSFETs are ON - allow current
                             effective_current_ma = current_ma
                             last_requested_current_ma = current_ma
@@ -470,6 +470,9 @@ def main():
                 success = tx.send_frame(frame_data)
                 if not success and args.verbose:
                     print(f"  ⚠ Failed to queue frame {frame_count}")
+                # Print simulator SOC after each TX frame (for monitoring)
+                simulator_soc = pack.get_pack_soc()
+                print(f"[Simulator SOC] Frame {frame_count}: {simulator_soc:.2f}%")
             
             frame_count += 1
             step += 1
